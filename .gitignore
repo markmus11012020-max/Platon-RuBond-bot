@@ -1,0 +1,43 @@
+# Archives
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+venv/
+.venv/
+env/
+
+# Environment
+.env
+.env.local
+
+# Databases & caches
+*.db
+*.sqlite
+*.sqlite3
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs / traces
+*.log
+agent_traces.jsonl
