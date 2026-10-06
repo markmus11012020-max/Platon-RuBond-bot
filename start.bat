@@ -1,10 +1,9 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-chcp 65001 >nul 2>&1
 
 REM ============================================================================
-REM  Platon-RuBond-bot Platform — start.bat
-REM  Оркестрация: stop → clean cache → venv + deps → streamlit
+REM  Platon-RuBond-bot Platform - start.bat
+REM  Orchestration: stop -> clean cache -> venv + deps -> streamlit
 REM ============================================================================
 
 set "ROOT=%~dp0"
@@ -21,29 +20,15 @@ set "HOST=localhost"
 
 echo.
 echo ============================================================
-echo   Platon-RuBond-bot Platform — deploy / start
+echo   Platon-RuBond-bot Platform - deploy / start
 echo ============================================================
 echo   Root: %ROOT%
 echo.
 
 REM ---------- 1. Stop old processes ----------
 echo [1/4] Stopping old processes...
-REM Streamlit / app.py by this project
-for /f "tokens=2 delims=," %%P in ('tasklist /FI "IMAGENAME eq python.exe" /FO CSV /NH 2^>nul') do (
-    set "PID=%%~P"
-    if defined PID (
-        wmic process where "ProcessId=!PID!" get CommandLine 2>nul | findstr /I /C:"streamlit" /C:"app.py" /C:"platon_rubond" >nul 2>&1
-        if !ERRORLEVEL! EQU 0 (
-            echo       Killing PID !PID!
-            taskkill /PID !PID! /F >nul 2>&1
-        )
-    )
-)
-REM Port 8501 holders
-for /f "tokens=5" %%A in ('netstat -ano 2^>nul ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
-    echo       Freeing port %PORT% PID %%A
-    taskkill /PID %%A /F >nul 2>&1
-)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$conn = Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue; if ($conn) { $conn | ForEach-Object { try { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } catch {} }; Write-Host ('       Freed port %PORT%') }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'streamlit|app\.py|platon_rubond' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; Write-Host ('       Killed PID ' + $_.ProcessId) } catch {} }"
 timeout /t 1 /nobreak >nul
 echo       Done.
 echo.
@@ -58,7 +43,6 @@ for /d /r "%ROOT%src" %%D in (__pycache__) do (
 if exist "%ROOT%.pytest_cache" rd /s /q "%ROOT%.pytest_cache" 2>nul
 if exist "%ROOT%tool_cache.db" del /f /q "%ROOT%tool_cache.db" 2>nul
 if exist "%ROOT%.streamlit\cache" rd /s /q "%ROOT%.streamlit\cache" 2>nul
-REM Python bytecode leftovers
 del /s /q "%ROOT%*.pyc" >nul 2>&1
 echo       Done.
 echo.
@@ -103,7 +87,7 @@ if errorlevel 1 (
 
 if not exist "%ROOT%.env" (
     if exist "%ROOT%.env.example" (
-        echo       .env missing — copying from .env.example
+        echo       .env missing - copying from .env.example
         copy /Y "%ROOT%.env.example" "%ROOT%.env" >nul
         echo       Fill API keys in .env before production use.
     )
