@@ -23,7 +23,7 @@ LIGHT_CSS = """
   background: var(--prb-bg) !important;
   color: var(--prb-text) !important;
 }
-.block-container { padding-top: 1.2rem; max-width: 1200px; }
+.block-container { padding-top: 1.2rem; max-width: 100%; }
 section[data-testid="stSidebar"] {
   background: var(--prb-sidebar) !important;
   border-right: 1px solid var(--prb-border);
@@ -82,7 +82,7 @@ DARK_CSS = """
   background: var(--prb-bg) !important;
   color: var(--prb-text) !important;
 }
-.block-container { padding-top: 1.2rem; max-width: 1200px; }
+.block-container { padding-top: 1.2rem; max-width: 100%; }
 section[data-testid="stSidebar"] {
   background: var(--prb-sidebar) !important;
   border-right: 1px solid var(--prb-border);
