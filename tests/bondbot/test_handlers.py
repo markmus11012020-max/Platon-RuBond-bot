@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import asyncio
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from bondbot.config import load_settings
+from bondbot.data.smartlab import parse_screener
+from bondbot.db import Database
+from bondbot.importers.smartlab_portfolio import import_portfolio_file
+from bondbot.vk.handlers import BotHandlers, format_portfolio, format_screen
+
+FIXTURES = Path(__file__).parent / "fixtures"
+CHAT_PEER = 2_000_000_777
+ADMIN_ID = 42
+
+
+class FakeVk:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_message(self, peer_id: int, message: str, **kwargs) -> int:
+        self.sent.append({"peer_id": peer_id, "message": message, **kwargs})
+        return 1
+
+
+@pytest.fixture
+def db(tmp_path) -> Database:
+    database = Database(str(tmp_path / "handlers.db"))
+    screener = (FIXTURES / "smartlab_screener.html").read_text(encoding="utf-8")
+    database.upsert_bonds(parse_screener(screener, source_url="fixture"))
+    import_portfolio_file(database, FIXTURES / "portfolio_synthetic.html")
+    yield database
+    database.close()
+
+
+def test_format_portfolio(db: Database) -> None:
+    text = format_portfolio(load_settings(), db)
+    assert "Бумажный портфель" in text
+    assert "1 517 400 ₽" in text
+    assert "P&L: 1 450 ₽" in text
+    assert "RU000TEST0001" in text
+    assert "Test Bond 1" in text
+
+
+def test_format_screen(db: Database) -> None:
+    text = format_screen(load_settings(), db, limit=3)
+    assert "Кандидаты" in text
+    assert "YTM" in text
+
+
+def test_connect_and_portfolio_command(db: Database) -> None:
+    settings = replace(
+        load_settings(),
+        vk_admin_user_id=ADMIN_ID,
+        vk_group_token="test",
+        vk_group_id=1,
+    )
+    vk = FakeVk()
+    handlers = BotHandlers(settings, db, vk)  # type: ignore[arg-type]
+
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/connect",
+                    }
+                },
+            }
+        )
+    )
+    assert db.kv_get("chat_peer_id") == str(CHAT_PEER)
+    assert "подключена" in vk.sent[-1]["message"].lower()
+
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/portfolio",
+                    }
+                },
+            }
+        )
+    )
+    assert "Бумажный портфель" in vk.sent[-1]["message"]
