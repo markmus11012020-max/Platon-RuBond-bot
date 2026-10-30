@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 import pytest
 
+from bondbot.analytics.rates import MaxYield
 from bondbot.config import load_settings
 from bondbot.data.smartlab import parse_screener
 from bondbot.db import Database
 from bondbot.importers.smartlab_portfolio import import_portfolio_file
-from bondbot.vk.handlers import BotHandlers, format_portfolio, format_screen
+from bondbot.vk.handlers import (
+    BotHandlers,
+    format_portfolio,
+    format_screen,
+    format_status,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CHAT_PEER = 2_000_000_777
@@ -49,6 +56,33 @@ def test_format_screen(db: Database) -> None:
     text = format_screen(load_settings(), db, limit=3)
     assert "Кандидаты" in text
     assert "YTM" in text
+    assert "Лимит:" in text
+
+
+def test_format_screen_with_dynamic_cap(db: Database) -> None:
+    cap = MaxYield(
+        value_pct=35.0,
+        source="key_rate",
+        key_rate_pct=25.0,
+        margin_pct=10.0,
+        as_of=date(2026, 10, 30),
+    )
+    text = format_screen(load_settings(), db, limit=3, max_yield=cap)
+    assert "ставка ЦБ 25.00%" in text
+    assert "35.00%" in text
+
+
+def test_format_status_shows_cap(db: Database) -> None:
+    cap = MaxYield(
+        value_pct=24.0,
+        source="key_rate",
+        key_rate_pct=14.0,
+        margin_pct=10.0,
+        as_of=date(2026, 10, 30),
+    )
+    text = format_status(load_settings(), db, max_yield=cap)
+    assert "Лимит доходности" in text
+    assert "ставка ЦБ 14.00%" in text
 
 
 def test_connect_and_portfolio_command(db: Database) -> None:

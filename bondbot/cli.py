@@ -7,6 +7,7 @@ import sys
 from datetime import datetime
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
+from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.config import load_settings
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
@@ -63,9 +64,13 @@ async def cmd_bond(args: argparse.Namespace, db: Database) -> None:
 async def cmd_screen(args: argparse.Namespace, db: Database) -> None:
     settings = load_settings()
     position = args.position or settings.position_size_rub
+    if args.yield_max is not None:
+        cap = MaxYield(value_pct=args.yield_max, source="fixed")
+    else:
+        cap = await resolve_max_yield(settings, db)
     filters = ScreenFilters(
         min_yield_pct=args.yield_min if args.yield_min is not None else settings.min_yield_pct,
-        max_yield_pct=args.yield_max if args.yield_max is not None else settings.max_yield_pct,
+        max_yield_pct=cap.value_pct,
         max_duration_years=args.duration_max if args.duration_max is not None else settings.max_duration_years,
         min_rating=args.rating or settings.min_rating,
         min_volume_mn_rub=args.volume_min,
@@ -76,6 +81,7 @@ async def cmd_screen(args: argparse.Namespace, db: Database) -> None:
     )
     required = required_daily_volume_mn(position, settings.max_pct_daily_volume)
     results = screen_bonds(db.list_bonds(), filters, required_volume_mn=required)
+    print(f"Лимит доходности: {cap.describe()}")
     print(
         f"Фильтр: доходность {filters.min_yield_pct}–{filters.max_yield_pct}%, "
         f"дюрация <= {filters.max_duration_years} лет, рейтинг >= {filters.min_rating}, "

@@ -5,6 +5,7 @@ from datetime import datetime
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
 from bondbot.analytics.portfolio import analyze_portfolio
+from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.config import Settings
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
@@ -111,10 +112,16 @@ def format_bond(bond: Bond) -> str:
     return _short("\n".join(lines), 3900)
 
 
-def format_screen(settings: Settings, db: Database, limit: int = 8) -> str:
+def format_screen(
+    settings: Settings,
+    db: Database,
+    limit: int = 8,
+    max_yield: MaxYield | None = None,
+) -> str:
+    cap = max_yield or MaxYield(value_pct=settings.max_yield_pct, source="fixed")
     filters = ScreenFilters(
         min_yield_pct=settings.min_yield_pct,
-        max_yield_pct=settings.max_yield_pct,
+        max_yield_pct=cap.value_pct,
         max_duration_years=settings.max_duration_years,
         min_rating=settings.min_rating,
         min_price_pct=settings.min_price_pct,
@@ -126,10 +133,15 @@ def format_screen(settings: Settings, db: Database, limit: int = 8) -> str:
     )
     results = screen_bonds(db.list_bonds(), filters, required_volume_mn=required)
     if not results:
-        return "Под текущий профиль ничего не найдено. Обнови данные на сервере."
+        return (
+            f"Под текущий профиль ничего не найдено.\n"
+            f"Лимит доходности: {cap.describe()}\n"
+            f"Обнови данные на сервере."
+        )
     lines = [
-        f"🔎 Кандидаты: доходность {settings.min_yield_pct}–{settings.max_yield_pct}%, "
+        f"🔎 Кандидаты: доходность {settings.min_yield_pct}–{cap.value_pct:.2f}%, "
         f"дюрация ≤ {settings.max_duration_years} лет, рейтинг ≥ {settings.min_rating}",
+        f"Лимит: {cap.describe()}",
         f"Позиция {_money(settings.position_size_rub)} ≤ {settings.max_pct_daily_volume:.0%} "
         f"дневного объёма (≥ {required:.0f} млн ₽)",
         "",
@@ -146,16 +158,22 @@ def format_screen(settings: Settings, db: Database, limit: int = 8) -> str:
     return _short("\n".join(lines), 3900)
 
 
-def format_status(settings: Settings, db: Database) -> str:
+def format_status(
+    settings: Settings,
+    db: Database,
+    max_yield: MaxYield | None = None,
+) -> str:
     bonds = db.list_bonds()
     positions = db.positions()
     coupons = sum(len(db.coupons(p.isin)) for p in positions)
     last = max((b.fetched_at for b in bonds), default=None)
+    cap = max_yield or MaxYield(value_pct=settings.max_yield_pct, source="fixed")
     return (
         f"Бумаг в базе: {len(bonds)}\n"
         f"Позиций: {len(positions)}\n"
         f"Купонов в календаре: {coupons}\n"
         f"Последнее обновление: {last.strftime('%d.%m.%Y %H:%M') if last else '—'}\n"
+        f"Лимит доходности: {cap.describe()}\n"
         f"LLM: {'on' if settings.llm_configured else 'off'} ({settings.openai_model})\n"
         f"VK: {'configured' if settings.vk_configured else 'not configured'}"
     )
@@ -192,13 +210,15 @@ class BotHandlers:
         elif command == "/portfolio":
             await self._reply(peer_id, format_portfolio(self.settings, self.db))
         elif command == "/screen":
-            await self._reply(peer_id, format_screen(self.settings, self.db))
+            cap = await resolve_max_yield(self.settings, self.db)
+            await self._reply(peer_id, format_screen(self.settings, self.db, max_yield=cap))
         elif command == "/bond":
             await self._bond(peer_id, argument)
         elif command == "/watch":
             await self._watch(peer_id, from_id, is_admin, argument)
         elif command == "/status":
-            await self._reply(peer_id, format_status(self.settings, self.db))
+            cap = await resolve_max_yield(self.settings, self.db)
+            await self._reply(peer_id, format_status(self.settings, self.db, max_yield=cap))
         elif command in {"/help", "/commands"}:
             await self._reply(peer_id, HELP_TEXT)
         elif command == "/ask":

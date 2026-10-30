@@ -24,7 +24,8 @@
 ## Принципы
 
 - LLM не считает числа. Все метрики берутся из smart-lab/MOEX и хранятся с датой источника.
-- YTM выше 35% и цена ниже 90% по умолчанию не рекомендуются — это зона риска/амортизации/оферты.
+- Верхняя граница доходности динамическая: ключевая ставка ЦБ + 10 п.п. (по умолчанию). Если ЦБ недоступен, используется последний кэш, затем фиксированный fallback 35%.
+- Цена ниже 90% по умолчанию не рекомендуется — это зона риска/амортизации/оферты.
 - Позиция 1 млн ₽ не должна быть больше 5% дневного оборота бумаги; отсюда минимальный объём 20 млн ₽.
 - Watchlist — это бумажный портфель/список наблюдения, а не реальные позиции.
 
@@ -34,6 +35,7 @@
 
 - `BONDBOT_DB_PATH`
 - `BONDBOT_VK_GROUP_TOKEN`, `BONDBOT_VK_GROUP_ID`, `BONDBOT_VK_ADMIN_USER_ID`
-- `BONDBOT_MIN_YIELD_PCT`, `BONDBOT_MAX_YIELD_PCT`, `BONDBOT_MAX_DURATION_YEARS`, `BONDBOT_MIN_RATING`
+- `BONDBOT_MIN_YIELD_PCT`, `BONDBOT_MAX_YIELD_PCT` (fallback), `BONDBOT_MAX_DURATION_YEARS`, `BONDBOT_MIN_RATING`
+- `BONDBOT_DYNAMIC_MAX_YIELD`, `BONDBOT_KEY_RATE_MARGIN_PCT`, `BONDBOT_KEY_RATE_TTL_HOURS`, `BONDBOT_KEY_RATE_TIMEOUT`, `BONDBOT_KEY_RATE_URL`
 - `BONDBOT_POSITION_SIZE_RUB`, `BONDBOT_MAX_PCT_DAILY_VOLUME`
 - `BONDBOT_OPENAI_BASE_URL`, `BONDBOT_OPENAI_API_KEY`, `BONDBOT_OPENAI_MODEL`

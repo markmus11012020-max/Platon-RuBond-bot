@@ -28,6 +28,13 @@ def _float(name: str, default: float) -> float:
         return default
 
 
+def _bool(name: str, default: bool) -> bool:
+    raw = _env(name)
+    if not raw:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     db_path: str = "bondbot.db"
@@ -39,6 +46,13 @@ class Settings:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124 Safari/537.36"
     )
+
+    # CBR key rate -> dynamic max screening yield
+    dynamic_max_yield: bool = True
+    key_rate_margin_pct: float = 10.0
+    key_rate_ttl_hours: int = 6
+    key_rate_timeout: int = 15
+    key_rate_url: str = "https://www.cbr.ru/hd_base/KeyRate/"
 
     # Portfolio sizing / liquidity
     position_size_rub: float = 1_000_000
@@ -82,6 +96,14 @@ def load_settings() -> Settings:
         request_timeout=_int("BONDBOT_REQUEST_TIMEOUT", 30),
         health_port=_int("BONDBOT_HEALTH_PORT", 8081),
         user_agent=_env("BONDBOT_USER_AGENT", Settings.user_agent),
+        dynamic_max_yield=_bool("BONDBOT_DYNAMIC_MAX_YIELD", True),
+        key_rate_margin_pct=_float("BONDBOT_KEY_RATE_MARGIN_PCT", 10.0),
+        key_rate_ttl_hours=_int("BONDBOT_KEY_RATE_TTL_HOURS", 6),
+        key_rate_timeout=_int("BONDBOT_KEY_RATE_TIMEOUT", 15),
+        key_rate_url=(
+            _env("BONDBOT_KEY_RATE_URL", "https://www.cbr.ru/hd_base/KeyRate/")
+            or "https://www.cbr.ru/hd_base/KeyRate/"
+        ),
         position_size_rub=_float("BONDBOT_POSITION_SIZE_RUB", 1_000_000),
         portfolio_size_rub=_float("BONDBOT_PORTFOLIO_SIZE_RUB", 5_000_000),
         max_pct_daily_volume=_float("BONDBOT_MAX_PCT_DAILY_VOLUME", 0.05),
