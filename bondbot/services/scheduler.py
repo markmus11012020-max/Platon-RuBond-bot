@@ -23,6 +23,7 @@ from bondbot.services.refresh import (
     refresh_key_rate,
     refresh_market,
 )
+from bondbot.services.review import save_portfolio_snapshot
 from bondbot.vk.client import VkClient
 
 log = logging.getLogger(__name__)
@@ -169,6 +170,7 @@ class BotScheduler:
             except Exception as exc:
                 log.warning("key rate refresh failed: %s", exc)
             sent = await build_and_send(self.settings, self.db, self.vk, snapshot)
+            save_portfolio_snapshot(self.settings, self.db)
             return {"updated": updated, "errors": errors, "alerts_sent": sent}
 
         await self._run("detail_refresh", run)

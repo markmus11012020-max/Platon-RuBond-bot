@@ -36,7 +36,8 @@
 
 `/portfolio`, `/bond ISIN`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`,
 `/risk [ISIN]`, `/stress [б.п.]`, `/news [ISIN]`, `/new`, `/idea`, `/journal`,
-`/strategy`, `/position add|remove|list`, `/ask вопрос`, `/status`, `/help`.
+`/strategy`, `/relative [ISIN]`, `/calendar [дней]`, `/doctor`, `/whatsnew`,
+`/position add|remove|list`, `/ask вопрос`, `/keyboard`, `/status`, `/help`.
 
 Бот приватный: команды принимаются только от владельца (`BONDBOT_VK_ADMIN_USER_ID`).
 

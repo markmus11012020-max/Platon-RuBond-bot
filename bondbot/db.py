@@ -657,7 +657,9 @@ class Database:
     def unsent_alerts(self, limit: int = 20) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT id, created_at, kind, severity, isin, message "
-            "FROM alerts WHERE sent_at IS NULL ORDER BY id LIMIT ?",
+            "FROM alerts WHERE sent_at IS NULL "
+            "ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, id "
+            "LIMIT ?",
             (max(1, limit),),
         ).fetchall()
         return [dict(row) for row in rows]

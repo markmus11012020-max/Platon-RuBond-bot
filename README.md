@@ -153,7 +153,7 @@ Platon-RuBond-bot/
 .\.venv\Scripts\python -m bondbot.cli audit
 ```
 
-Команды VK: `/portfolio`, `/bond ISIN`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/risk`, `/stress`, `/news`, `/new`, `/idea`, `/journal`, `/strategy`, `/position`, `/ask`, `/status`, `/help`.
+Команды VK: `/portfolio`, `/bond ISIN`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/risk`, `/stress`, `/news`, `/new`, `/idea`, `/journal`, `/strategy`, `/relative`, `/calendar`, `/doctor`, `/whatsnew`, `/position`, `/ask`, `/keyboard`, `/status`, `/help`.
 
 Планировщик обновляет рынок и новости, формирует утренний дайджест, алерты и стратегию недели. LLM используется только для объяснений: все числа берутся из детерминированных инструментов.
 

@@ -235,6 +235,10 @@ def test_smart_commands_reply(db: Database) -> None:
         "/journal": "Журнал идей",
         "/strategy": "Стратегия",
         "/idea": "Идеи в коридоре",
+        "/relative": "Relative value",
+        "/doctor": "Портфель",
+        "/whatsnew": "Что изменилось",
+        "/keyboard": "Кнопки",
         "/position list": "Бумажный портфель",
         "/ask": "Напиши вопрос",
     }
@@ -270,6 +274,21 @@ def test_smart_commands_reply(db: Database) -> None:
         )
     )
     assert "Позиция добавлена" in vk.sent[-1]["message"]
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/calendar 90",
+                    }
+                },
+            }
+        )
+    )
+    assert "Календарь" in vk.sent[-1]["message"] or "Событий" in vk.sent[-1]["message"]
     asyncio.run(
         handlers.handle_update(
             {

@@ -76,7 +76,7 @@ class Settings:
     alerts_enabled: bool = True
     alert_quiet_start: int = 23
     alert_quiet_end: int = 8
-    alert_max_per_day: int = 10
+    alert_max_per_day: int = 5
 
     # Backups
     backup_enabled: bool = True
@@ -160,7 +160,7 @@ def load_settings() -> Settings:
         alerts_enabled=_bool("BONDBOT_ALERTS_ENABLED", True),
         alert_quiet_start=_int("BONDBOT_ALERT_QUIET_START", 23),
         alert_quiet_end=_int("BONDBOT_ALERT_QUIET_END", 8),
-        alert_max_per_day=_int("BONDBOT_ALERT_MAX_PER_DAY", 10),
+        alert_max_per_day=_int("BONDBOT_ALERT_MAX_PER_DAY", 5),
         backup_enabled=_bool("BONDBOT_BACKUP_ENABLED", True),
         backup_dir=_env("BONDBOT_BACKUP_DIR", "/data/backups") or "/data/backups",
         backup_keep=_int("BONDBOT_BACKUP_KEEP", 14),

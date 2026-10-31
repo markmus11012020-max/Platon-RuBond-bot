@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
 from bondbot.analytics.portfolio import analyze_portfolio
@@ -20,6 +20,8 @@ from bondbot.services.ideas import (
     save_ideas,
 )
 from bondbot.services.news import build_news_digest
+from bondbot.services.relative import build_relative_value
+from bondbot.services.review import build_portfolio_review, build_what_changed
 from bondbot.strategy.allocation import build_allocation
 from bondbot.strategy.exit import build_exit_plan
 from bondbot.strategy.render import (
@@ -55,13 +57,39 @@ HELP_TEXT = """Platon Bond Bot — аналитика облигаций РФ.
 /idea — идеи в коридоре
 /journal — журнал идей
 /strategy — стратегия на неделю
+/relative [ISIN] — сравнение доходности с peers
+/calendar [дней] — оферты, погашения, купоны
+/doctor — здоровье портфеля
+/whatsnew — что изменилось
 /position add ISIN кол-во цена | remove ISIN | list
 /ask вопрос — ИИ-аналитик
+/keyboard — показать кнопки
 /status — состояние данных
 /connect — подключить беседу (админ)
 /help — эта справка
 
-Данные: smart-lab.ru. Это аналитика, не индивидуальная инвестиционная рекомендация."""
+Данные: smart-lab.ru и MOEX ISS. Это аналитика, не индивидуальная инвестиционная рекомендация."""
+
+MAIN_KEYBOARD = {
+    "one_time": False,
+    "buttons": [
+        [
+            {"action": {"type": "text", "label": "/portfolio"}},
+            {"action": {"type": "text", "label": "/safe"}},
+            {"action": {"type": "text", "label": "/idea"}},
+        ],
+        [
+            {"action": {"type": "text", "label": "/risk"}},
+            {"action": {"type": "text", "label": "/stress"}},
+            {"action": {"type": "text", "label": "/news"}},
+        ],
+        [
+            {"action": {"type": "text", "label": "/strategy"}},
+            {"action": {"type": "text", "label": "/journal"}},
+            {"action": {"type": "text", "label": "/help"}},
+        ],
+    ],
+}
 
 
 def _money(value: float | None) -> str:
@@ -255,9 +283,13 @@ class BotHandlers:
             if not is_chat:
                 self.db.kv_set("owner_peer_id", str(peer_id))
             if is_chat:
-                await self._reply(peer_id, HELP_TEXT)
+                await self._reply(peer_id, HELP_TEXT, keyboard=MAIN_KEYBOARD)
             else:
-                await self._reply(peer_id, "Привет. Я аналитик по облигациям.\n\n" + HELP_TEXT)
+                await self._reply(
+                    peer_id,
+                    "Привет. Я аналитик по облигациям.\n\n" + HELP_TEXT,
+                    keyboard=MAIN_KEYBOARD,
+                )
         elif command == "/connect":
             await self._connect(peer_id, is_admin, is_chat)
         elif command == "/portfolio":
@@ -289,6 +321,16 @@ class BotHandlers:
             await self._reply(peer_id, render_journal(self.db))
         elif command == "/strategy":
             await self._strategy(peer_id)
+        elif command == "/relative":
+            await self._relative(peer_id, argument)
+        elif command == "/calendar":
+            await self._calendar(peer_id, argument)
+        elif command == "/doctor":
+            await self._doctor(peer_id)
+        elif command == "/whatsnew":
+            await self._reply(peer_id, build_what_changed(self.settings, self.db))
+        elif command in {"/keyboard", "/buttons"}:
+            await self._reply(peer_id, "Кнопки включены. /help — команды.", keyboard=MAIN_KEYBOARD)
         elif command == "/position":
             await self._position(peer_id, argument)
         elif command == "/ask":
@@ -299,7 +341,7 @@ class BotHandlers:
             cap = await resolve_max_yield(self.settings, self.db)
             await self._reply(peer_id, format_status(self.settings, self.db, max_yield=cap))
         elif command in {"/help", "/commands"}:
-            await self._reply(peer_id, HELP_TEXT)
+            await self._reply(peer_id, HELP_TEXT, keyboard=MAIN_KEYBOARD)
         else:
             await self._reply(peer_id, "Неизвестная команда. /help — список команд.")
 
@@ -522,6 +564,77 @@ class BotHandlers:
         answer = await Assistant(self.settings, self.db).answer(argument)
         await self._reply(peer_id, answer)
 
+    async def _relative(self, peer_id: int, argument: str) -> None:
+        try:
+            snapshot = await self._key_rate_snapshot()
+            text = build_relative_value(
+                self.settings,
+                self.db,
+                snapshot,
+                isin=argument.strip().upper() or None,
+            )
+        except Exception as exc:
+            log.warning("relative value failed: %s", exc)
+            await self._reply(peer_id, f"Не удалось посчитать relative value: {exc}")
+            return
+        await self._reply(peer_id, text)
+
+    async def _calendar(self, peer_id: int, argument: str) -> None:
+        try:
+            days = max(1, min(365, int((argument or "90").strip())))
+        except ValueError:
+            days = 90
+        today = date.today()
+        bonds = {bond.isin: bond for bond in self.db.list_bonds()}
+        positions = self.db.positions()
+        isins = {position.isin for position in positions} | {
+            str(row["isin"]) for row in self.db.watchlist()
+        }
+        events: list[tuple[int, str, str, str]] = []
+        for isin in isins:
+            bond = bonds.get(isin)
+            if bond is None:
+                continue
+            for kind, value in (
+                ("оферта", bond.offer_date),
+                ("погашение", bond.maturity_date),
+                ("купон", bond.next_coupon_date),
+            ):
+                if value is None:
+                    continue
+                delta = (value - today).days
+                if 0 <= delta <= days:
+                    events.append((delta, bond.name, kind, value.isoformat()))
+        for position in positions:
+            for coupon in self.db.coupons(position.isin):
+                delta = (coupon.coupon_date - today).days
+                if 0 <= delta <= days:
+                    events.append(
+                        (delta, position.name, "купон", coupon.coupon_date.isoformat())
+                    )
+        if not events:
+            await self._reply(peer_id, f"Событий на {days} дней нет.")
+            return
+        seen: set[tuple[str, str, str]] = set()
+        lines = [f"📅 Календарь на {days} дней", ""]
+        for delta, name, kind, value in sorted(events)[:25]:
+            key = (name, kind, value)
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.append(f"• через {delta} дн. ({value}) — {name}: {kind}")
+        await self._reply(peer_id, "\n".join(lines))
+
+    async def _doctor(self, peer_id: int) -> None:
+        try:
+            snapshot = await self._key_rate_snapshot()
+            text = build_portfolio_review(self.settings, self.db, snapshot)
+        except Exception as exc:
+            log.warning("portfolio review failed: %s", exc)
+            await self._reply(peer_id, f"Не удалось проверить портфель: {exc}")
+            return
+        await self._reply(peer_id, text)
+
     async def _watch(self, peer_id: int, from_id: int, is_admin: bool, argument: str) -> None:
         parts = argument.split()
         action = parts[0].lower() if parts else "list"
@@ -556,9 +669,19 @@ class BotHandlers:
         else:
             await self._reply(peer_id, "Команды: /watch add ISIN, /watch remove ISIN, /watch")
 
-    async def _reply(self, peer_id: int, text: str) -> None:
+    async def _reply(
+        self,
+        peer_id: int,
+        text: str,
+        *,
+        keyboard: dict | None = None,
+    ) -> None:
         try:
-            await self.vk.send_message(peer_id, _short(text, 3900))
+            await self.vk.send_message(
+                peer_id,
+                _short(text, 3900),
+                keyboard=keyboard,
+            )
         except VkApiError as exc:
             log.warning("reply to %s failed: %s", peer_id, exc)
 
