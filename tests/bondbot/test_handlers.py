@@ -181,6 +181,26 @@ def test_stranger_is_ignored(db: Database) -> None:
     assert vk.sent == []
 
 
+def test_keyboard_mention_prefix_is_parsed(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "[club242762834|@club242762834] /help",
+                    }
+                },
+            }
+        )
+    )
+    assert "Platon Bond Bot" in vk.sent[-1]["message"]
+    assert vk.sent[-1].get("keyboard") is not None
+
+
 def test_strategy_commands_reply(db: Database) -> None:
     handlers, vk = _owner_handlers(db)
     db.kv_set(

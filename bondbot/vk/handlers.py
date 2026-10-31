@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
@@ -270,14 +271,20 @@ class BotHandlers:
         if not text or from_id <= 0 or not peer_id:
             return
 
-        command, _, argument = text.partition(" ")
-        command = command.lower().split("@")[0]
         is_admin = bool(self.settings.vk_admin_user_id) and from_id == self.settings.vk_admin_user_id
-        is_chat = VkClient.is_chat_peer(peer_id)
-
         if not is_admin:
             log.warning("ignored message from non-owner %s", from_id)
             return
+
+        # VK добавляет mention сообщества к кнопкам в беседе:
+        # "[club123|@club123] /help" или "@club123 /help".
+        match = re.search(r"(?<!\S)/[A-Za-zА-Яа-я0-9_]+", text)
+        if match is None:
+            await self._reply(peer_id, "Неизвестная команда. /help — список команд.")
+            return
+        command = match.group(0).lower().split("@")[0]
+        argument = text[match.end():].strip()
+        is_chat = VkClient.is_chat_peer(peer_id)
 
         if command == "/start":
             if not is_chat:
