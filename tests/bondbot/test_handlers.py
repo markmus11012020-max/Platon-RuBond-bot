@@ -12,7 +12,7 @@ from bondbot.config import load_settings
 from bondbot.data.cbr import CACHE_KEY, KeyRateSnapshot
 from bondbot.data.smartlab import parse_screener
 from bondbot.db import Database
-from bondbot.models import Bond, utcnow
+from bondbot.models import Bond, PortfolioPosition, utcnow
 from bondbot.importers.smartlab_portfolio import import_portfolio_file
 from bondbot.vk.handlers import (
     BotHandlers,
@@ -30,6 +30,7 @@ class FakeVk:
     def __init__(self) -> None:
         self.sent: list[dict] = []
         self.members = {ADMIN_ID}
+        self.downloaded: bytes = b""
 
     async def send_message(self, peer_id: int, message: str, **kwargs) -> int:
         self.sent.append({"peer_id": peer_id, "message": message, **kwargs})
@@ -37,6 +38,9 @@ class FakeVk:
 
     async def is_group_member(self, user_id: int, group_id: int | None = None) -> bool:
         return user_id in self.members
+
+    async def download(self, url: str, limit: int = 8_000_000) -> bytes:
+        return self.downloaded
 
 
 @pytest.fixture
@@ -289,6 +293,55 @@ def test_long_reply_is_split_not_truncated(db: Database) -> None:
     assert "Строка 0" in combined
     assert "Строка 99" in combined
     assert all(len(item["message"]) <= 3500 for item in vk.sent)
+
+
+def test_document_import_replaces_portfolio(db: Database, monkeypatch) -> None:
+    handlers, vk = _owner_handlers(db)
+    html = (FIXTURES / "portfolio_synthetic.html").read_text(encoding="utf-8")
+    vk.downloaded = html.encode("utf-8")
+    db.upsert_positions(
+        [
+            PortfolioPosition(
+                isin="STALE",
+                name="Stale position",
+                qty=1,
+                current_value_rub=1.0,
+            )
+        ]
+    )
+
+    async def fake_refresh(*args, **kwargs):
+        return 0, []
+
+    monkeypatch.setattr("bondbot.vk.handlers.refresh_details", fake_refresh)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "",
+                        "attachments": [
+                            {
+                                "type": "doc",
+                                "doc": {
+                                    "title": "portfolio.html",
+                                    "ext": "html",
+                                    "url": "https://example.com/portfolio.html",
+                                },
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+    )
+    assert "Портфель обновлён: 2 позиций" in vk.sent[-2]["message"]
+    assert "1 517 400 ₽" in vk.sent[-1]["message"]
+    assert len(db.positions()) == 2
+    assert all(position.isin != "STALE" for position in db.positions())
 
 
 def test_dialog_history_roundtrip(db: Database) -> None:

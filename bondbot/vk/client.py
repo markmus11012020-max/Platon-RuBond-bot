@@ -131,6 +131,17 @@ class VkClient:
             event_data=json.dumps(event_data, ensure_ascii=False),
         )
 
+    async def download(self, url: str, limit: int = 8_000_000) -> bytes:
+        if not url:
+            raise VkApiError("download", 0, "empty URL")
+        async with self._session.get(url) as response:
+            if response.status >= 400:
+                raise VkApiError("download", response.status, f"HTTP {response.status}")
+            data = await response.content.read(limit + 1)
+        if len(data) > limit:
+            raise VkApiError("download", 0, "file is too large")
+        return data
+
     async def is_group_member(self, user_id: int, group_id: int | None = None) -> bool:
         response = await self.call(
             "groups.isMember",

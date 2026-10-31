@@ -94,11 +94,14 @@ def parse_portfolio_html(html: str, source_url: str = "") -> list[PortfolioPosit
     return positions
 
 
-def import_portfolio_file(db: Database, path: str | Path) -> list[PortfolioPosition]:
-    path = Path(path)
-    positions = parse_portfolio_html(path.read_text(encoding="utf-8", errors="replace"), source_url=str(path))
+def import_portfolio_html(
+    db: Database,
+    html: str,
+    source_url: str = "",
+) -> list[PortfolioPosition]:
+    positions = parse_portfolio_html(html, source_url=source_url)
     if not positions:
-        raise ValueError("no positions parsed from portfolio file")
+        raise ValueError("no positions parsed from portfolio")
 
     now = datetime.now(timezone.utc)
     bonds = [
@@ -119,7 +122,18 @@ def import_portfolio_file(db: Database, path: str | Path) -> list[PortfolioPosit
         for position in positions
     ]
     db.upsert_bonds(bonds)
+    # Портфель на Smart-Lab — источник истины: старые позиции удаляем.
+    db.clear_positions()
     db.upsert_positions(positions)
     for position in positions:
         db.add_watch(position.isin, "paper portfolio")
     return positions
+
+
+def import_portfolio_file(db: Database, path: str | Path) -> list[PortfolioPosition]:
+    path = Path(path)
+    return import_portfolio_html(
+        db,
+        path.read_text(encoding="utf-8", errors="replace"),
+        source_url=str(path),
+    )

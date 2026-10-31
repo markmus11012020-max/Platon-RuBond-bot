@@ -522,6 +522,10 @@ class Database:
         with self.conn:
             self.conn.execute("DELETE FROM positions WHERE isin = ?", (isin.upper(),))
 
+    def clear_positions(self) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM positions")
+
     def portfolio_totals(self) -> dict[str, float]:
         rows = self.conn.execute(
             "SELECT qty, buy_price_pct, current_value_rub, coupon_rub, coupon_freq, annual_coupon_rub FROM positions"

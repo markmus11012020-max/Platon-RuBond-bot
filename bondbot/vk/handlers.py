@@ -20,6 +20,7 @@ from bondbot.analytics.risk import assess_bond_risk, assess_portfolio_risk, stre
 from bondbot.config import Settings
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
+from bondbot.importers.smartlab_portfolio import import_portfolio_html
 from bondbot.knowledge import format_topic
 from bondbot.models import Bond, PortfolioPosition, ScreenFilters, now_msk, to_msk
 from bondbot.services.assistant import Assistant
@@ -37,6 +38,7 @@ from bondbot.services.issuer import (
 )
 from bondbot.services.news import build_news_digest
 from bondbot.services.relative import build_relative_value
+from bondbot.services.refresh import refresh_details
 from bondbot.services.review import build_portfolio_review, build_what_changed
 from bondbot.strategy.allocation import build_allocation
 from bondbot.strategy.exit import build_exit_plan
@@ -81,7 +83,9 @@ ADMIN_HELP_TEXT = HELP_TEXT + """
 
 Админ-команды:
 /portfolio, /position, /watch, /exit, /alloc, /stress, /strategy, /calendar,
-/doctor, /whatsnew, /journal, /connect"""
+/doctor, /whatsnew, /journal, /connect
+
+Обновить портфель: отправь боту файл portfolio.html из Smart-Lab."""
 
 MAIN_KEYBOARD = {
     "one_time": False,
@@ -442,9 +446,10 @@ class BotHandlers:
             return
         message = (update.get("object") or {}).get("message") or {}
         text = (message.get("text") or "").strip()
+        attachments = message.get("attachments") or []
         peer_id = int(message.get("peer_id") or 0)
         from_id = int(message.get("from_id") or 0)
-        if not text or from_id <= 0 or not peer_id:
+        if (not text and not attachments) or from_id <= 0 or not peer_id:
             return
 
         is_admin = bool(self.settings.vk_admin_user_id) and from_id == self.settings.vk_admin_user_id
@@ -460,6 +465,15 @@ class BotHandlers:
                     f"Вступить: {link}",
                 )
                 return
+
+        if attachments:
+            if not is_admin:
+                await self._reply(peer_id, "Обновлять портфель может только администратор сообщества.")
+                return
+            await self._import_portfolio_attachment(peer_id, attachments)
+            return
+        if not text:
+            return
 
         # VK добавляет mention сообщества к кнопкам в беседе:
         # "[club123|@club123] /help" или "@club123 /help".
@@ -494,7 +508,14 @@ class BotHandlers:
         elif command == "/connect":
             await self._connect(peer_id, is_admin, is_chat)
         elif command == "/portfolio":
-            await self._reply(peer_id, format_portfolio(self.settings, self.db))
+            if argument.strip().lower() in {"import", "обновить", "update"}:
+                await self._reply(
+                    peer_id,
+                    "Отправь боту файл portfolio.html из Smart-Lab — "
+                    "я заменю состав портфеля и обновлю карточки.",
+                )
+            else:
+                await self._reply(peer_id, format_portfolio(self.settings, self.db))
         elif command == "/screen":
             await self._screen(peer_id, argument)
         elif command == "/preset":
@@ -562,6 +583,56 @@ class BotHandlers:
             await self._reply(peer_id, help_text, keyboard=keyboard)
         else:
             await self._reply(peer_id, "Неизвестная команда. /help — список команд.")
+
+    async def _import_portfolio_attachment(
+        self,
+        peer_id: int,
+        attachments: list[dict],
+    ) -> None:
+        document = None
+        for attachment in attachments:
+            if attachment.get("type") != "doc":
+                continue
+            doc = attachment.get("doc") or {}
+            title = str(doc.get("title") or "").lower()
+            extension = str(doc.get("ext") or "").lower()
+            if extension in {"html", "htm"} or "portfolio" in title:
+                document = doc
+                break
+        if document is None:
+            await self._reply(peer_id, "Пришли файл portfolio.html из Smart-Lab.")
+            return
+        url = str(document.get("url") or "")
+        if not url:
+            await self._reply(peer_id, "Не удалось получить ссылку на файл.")
+            return
+        try:
+            raw = await self.vk.download(url)
+            try:
+                html = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                html = raw.decode("cp1251", errors="replace")
+            positions = import_portfolio_html(
+                self.db,
+                html,
+                source_url="vk-document",
+            )
+        except Exception as exc:
+            log.warning("portfolio import failed: %s", exc)
+            await self._reply(peer_id, f"Не удалось импортировать портфель: {exc}")
+            return
+        await self._reply(
+            peer_id,
+            f"Портфель обновлён: {len(positions)} позиций. "
+            "Обновляю карточки бумаг...",
+        )
+        try:
+            updated, errors = await refresh_details(self.settings, self.db)
+            if errors:
+                log.warning("portfolio detail refresh errors: %s", errors)
+        except Exception as exc:
+            log.warning("portfolio detail refresh failed: %s", exc)
+        await self._reply(peer_id, format_portfolio(self.settings, self.db))
 
     async def _connect(self, peer_id: int, is_admin: bool, is_chat: bool) -> None:
         if not is_admin:

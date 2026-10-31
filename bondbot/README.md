@@ -45,6 +45,9 @@
 `/strategy`, `/relative [ISIN]`, `/calendar [дней]`, `/doctor`, `/whatsnew`,
 `/position add|remove|list`, `/ask вопрос`, `/tax [купон]`, `/iis`, `/clear`, `/keyboard`, `/status`, `/help`.
 
+Обновление портфеля: отправь боту файл `portfolio.html`, сохранённый из Smart-Lab.
+Бот заменит состав портфеля, удалит старые позиции и обновит карточки бумаг.
+
 Публичные команды доступны участникам сообщества. `/portfolio`, `/position`, `/watch`,
 `/exit`, `/alloc`, `/stress`, `/strategy`, `/calendar`, `/doctor`, `/whatsnew`, `/journal`
 и `/connect` — только администратору.
