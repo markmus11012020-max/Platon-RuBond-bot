@@ -19,7 +19,7 @@ BOND_LIMITS: dict[str, tuple[float, float]] = {
     "nkd_rub": (0.0, 100_000.0),
     "duration_years": (0.0, 50.0),
     "years_to_maturity": (0.0, 50.0),
-    "face_value": (1.0, 1_000_000.0),
+    "face_value": (1.0, 1e9),
     "issue_size_rub": (0.0, 1e15),
     "g_spread_bp": (-10_000.0, 10_000.0),
 }
@@ -47,37 +47,33 @@ def _sanitize(value: float | None, low: float, high: float) -> float | None:
 def sanitize_bond(bond: Bond) -> Bond:
     """Обнуляет заведомо битые числа, чтобы они не попадали в скрининг и рейтинги."""
     updates: dict[str, float | None] = {}
+    invalid: list[str] = []
     for field, (low, high) in BOND_LIMITS.items():
         value = getattr(bond, field)
         cleaned = _sanitize(value, low, high)
         if cleaned != value:
-            log.warning(
-                "bond %s: %s=%s вне диапазона %s..%s — поле очищено",
-                bond.isin,
-                field,
-                value,
-                low,
-                high,
-            )
+            invalid.append(f"{field}={value}")
             updates[field] = cleaned
+    if invalid:
+        log.warning("bond %s: очищены битые поля: %s", bond.isin, ", ".join(invalid))
     return replace(bond, **updates) if updates else bond
 
 
 def sanitize_position(position: PortfolioPosition) -> PortfolioPosition:
     updates: dict[str, float | None] = {}
+    invalid: list[str] = []
     for field, (low, high) in POSITION_LIMITS.items():
         value = getattr(position, field)
         cleaned = _sanitize(value, low, high)
         if cleaned != value:
-            log.warning(
-                "position %s: %s=%s вне диапазона %s..%s — поле очищено",
-                position.isin,
-                field,
-                value,
-                low,
-                high,
-            )
+            invalid.append(f"{field}={value}")
             updates[field] = cleaned
+    if invalid:
+        log.warning(
+            "position %s: очищены битые поля: %s",
+            position.isin,
+            ", ".join(invalid),
+        )
     return replace(position, **updates) if updates else position
 
 

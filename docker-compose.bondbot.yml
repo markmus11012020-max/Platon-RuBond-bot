@@ -3,18 +3,24 @@ services:
     build:
       context: .
       dockerfile: bondbot/Dockerfile
-    image: platon-bond-bot:0.1.0
+    image: platon-bond-bot:1.0.0
     env_file: .env
     environment:
       BONDBOT_DB_PATH: /data/bondbot.db
       BONDBOT_HEALTH_PORT: "8081"
+      BONDBOT_BACKUP_DIR: /data/backups
+      TZ: Europe/Moscow
     volumes:
       - ./bondbot-data:/data
     ports:
       - "127.0.0.1:8081:8081"
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     mem_limit: 512m
     cpus: 0.50
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test:
         - CMD
@@ -24,7 +30,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
     logging:
       driver: json-file
       options:

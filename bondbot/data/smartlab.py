@@ -288,10 +288,27 @@ class SmartLabClient:
     async def _fetch(self, url: str) -> str:
         if self._session is None:
             raise RuntimeError("client is not started")
-        async with self._session.get(url) as response:
-            if response.status >= 400:
-                raise RuntimeError(f"smart-lab HTTP {response.status}: {url}")
-            return await response.text()
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                async with self._session.get(url) as response:
+                    if response.status >= 500:
+                        raise aiohttp.ClientResponseError(
+                            response.request_info,
+                            response.history,
+                            status=response.status,
+                            message=f"smart-lab HTTP {response.status}",
+                        )
+                    if response.status >= 400:
+                        raise RuntimeError(f"smart-lab HTTP {response.status}: {url}")
+                    return await response.text()
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                last_error = exc
+                if attempt >= 3:
+                    raise
+                log.warning("smart-lab attempt %s failed for %s: %s", attempt, url, exc)
+                await asyncio.sleep(1.0 * attempt)
+        raise RuntimeError(f"smart-lab unavailable: {last_error}")
 
     async def fetch_screener(self, pages: int | None = None) -> list[Bond]:
         pages = pages or self.settings.smartlab_pages

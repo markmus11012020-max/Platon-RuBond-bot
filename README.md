@@ -155,7 +155,7 @@ Platon-RuBond-bot/
 
 Команды VK: `/portfolio`, `/bond ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/status`, `/help`.
 
-Production-развёртывание — отдельный compose-project `bondbot`, контейнер `bondbot-app`, health на `127.0.0.1:8091`; существующий freelance-бот и Caddy не затрагиваются.
+Production-развёртывание — отдельный compose-project `platon-bond-bot`, health на `127.0.0.1:8081`; существующий freelance-бот (порт 8080) и Caddy не затрагиваются.
 
 ---
 

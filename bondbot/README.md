@@ -33,6 +33,16 @@
 
 `/portfolio`, `/bond ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/status`, `/help`. Бот приватный: команды принимаются только от владельца (`BONDBOT_VK_ADMIN_USER_ID`).
 
+## Планировщик
+
+- `market_refresh` — ежедневно в 23:30 MSK: smart-lab + MOEX ISS, новые выпуски, алерты;
+- `detail_refresh` — ежедневно в 10:00 MSK: карточки watchlist и позиций;
+- `key_rate` — каждые 6 часов;
+- `digest` — ежедневно в 09:00 MSK;
+- `backup` — ежедневно в 03:00 MSK в `/data/backups`.
+
+Все запуски пишутся в `job_runs`; статус виден в `/healthz` и `python -m bondbot.cli jobs`.
+
 ## Принципы
 
 - LLM не считает числа. Все метрики берутся из smart-lab/MOEX и хранятся с датой источника.
@@ -55,7 +65,7 @@
 ## Деплой
 
 ```powershell
-docker compose -p bondbot -f docker-compose.bondbot.yml up -d --build
+docker compose -p platon-bond-bot -f docker-compose.bondbot.yml up -d --build
 ```
 
-Контейнер `bondbot-app`, health `127.0.0.1:8091/healthz`, БД `/data/bondbot.db`. Проект изолирован от других VK-ботов на том же сервере: отдельные compose-project, сеть, том и VK-сообщество.
+Контейнер проекта `platon-bond-bot`, health `127.0.0.1:8081/healthz`, БД `/data/bondbot.db` (bind-каталог `./bondbot-data`). Проект изолирован от freelance-бота: отдельные compose-project, порт, база и VK-сообщество.

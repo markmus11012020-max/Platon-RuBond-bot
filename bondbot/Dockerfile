@@ -12,7 +12,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bondbot ./bondbot
 
-RUN mkdir -p /data
+RUN useradd --create-home --uid 10001 bondbot \
+    && mkdir -p /data \
+    && chown -R bondbot:bondbot /app /data
+
+USER bondbot
+
 EXPOSE 8081
 
 CMD ["python", "-m", "bondbot.main"]

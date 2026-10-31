@@ -61,6 +61,32 @@ class Settings:
     min_issue_size_rub: float = 5_000_000_000
     exit_horizon_days: int = 5
 
+    # Scheduler / refresh
+    scheduler_enabled: bool = True
+    refresh_hour: int = 23
+    refresh_minute: int = 30
+    detail_refresh_hour: int = 10
+    detail_refresh_minute: int = 0
+    digest_hour: int = 9
+    digest_minute: int = 0
+    data_stale_hours: int = 36
+
+    # Alerts / owner
+    owner_peer_id: int = 0
+    alerts_enabled: bool = True
+    alert_quiet_start: int = 23
+    alert_quiet_end: int = 8
+    alert_max_per_day: int = 10
+
+    # Backups
+    backup_enabled: bool = True
+    backup_dir: str = "/data/backups"
+    backup_keep: int = 14
+
+    # MOEX ISS
+    moex_enabled: bool = True
+    moex_base: str = "https://iss.moex.com"
+
     # Default screening profile
     min_yield_pct: float = 14.0
     max_yield_pct: float = 35.0
@@ -110,6 +136,25 @@ def load_settings() -> Settings:
         max_pct_daily_volume=_float("BONDBOT_MAX_PCT_DAILY_VOLUME", 0.05),
         min_issue_size_rub=_float("BONDBOT_MIN_ISSUE_SIZE_RUB", 5_000_000_000),
         exit_horizon_days=_int("BONDBOT_EXIT_HORIZON_DAYS", 5),
+        scheduler_enabled=_bool("BONDBOT_SCHEDULER_ENABLED", True),
+        refresh_hour=_int("BONDBOT_REFRESH_HOUR", 23),
+        refresh_minute=_int("BONDBOT_REFRESH_MINUTE", 30),
+        detail_refresh_hour=_int("BONDBOT_DETAIL_REFRESH_HOUR", 10),
+        detail_refresh_minute=_int("BONDBOT_DETAIL_REFRESH_MINUTE", 0),
+        digest_hour=_int("BONDBOT_DIGEST_HOUR", 9),
+        digest_minute=_int("BONDBOT_DIGEST_MINUTE", 0),
+        data_stale_hours=_int("BONDBOT_DATA_STALE_HOURS", 36),
+        owner_peer_id=_int("BONDBOT_OWNER_PEER_ID", 0),
+        alerts_enabled=_bool("BONDBOT_ALERTS_ENABLED", True),
+        alert_quiet_start=_int("BONDBOT_ALERT_QUIET_START", 23),
+        alert_quiet_end=_int("BONDBOT_ALERT_QUIET_END", 8),
+        alert_max_per_day=_int("BONDBOT_ALERT_MAX_PER_DAY", 10),
+        backup_enabled=_bool("BONDBOT_BACKUP_ENABLED", True),
+        backup_dir=_env("BONDBOT_BACKUP_DIR", "/data/backups") or "/data/backups",
+        backup_keep=_int("BONDBOT_BACKUP_KEEP", 14),
+        moex_enabled=_bool("BONDBOT_MOEX_ENABLED", True),
+        moex_base=_env("BONDBOT_MOEX_BASE", "https://iss.moex.com").rstrip("/")
+        or "https://iss.moex.com",
         min_yield_pct=_float("BONDBOT_MIN_YIELD_PCT", 14.0),
         max_yield_pct=_float("BONDBOT_MAX_YIELD_PCT", 35.0),
         max_duration_years=_float("BONDBOT_MAX_DURATION_YEARS", 5.0),

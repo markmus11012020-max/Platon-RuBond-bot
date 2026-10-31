@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 
@@ -17,8 +16,6 @@ from bondbot.strategy.types import (
     AllocationTarget,
     LiquidityPlan,
 )
-
-log = logging.getLogger(__name__)
 
 _TOLERANCE = 1e-9
 
@@ -157,8 +154,6 @@ def build_allocation(
     Ограничения: максимальная доля позиции, доля на группу рейтинга,
     ликвидность по объёму, минимальный рейтинг, дюрация.
     LLM не участвует — только формулы."""
-    from bondbot.analytics.portfolio import analyze_portfolio
-
     now = now or datetime.now(timezone.utc)
     range = safe_range(snapshot)
     cons = constraints or AllocationConstraints()

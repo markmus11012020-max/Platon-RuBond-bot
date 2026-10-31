@@ -9,6 +9,7 @@ from aiohttp import web
 
 from bondbot.config import Settings, load_settings
 from bondbot.db import Database
+from bondbot.services.scheduler import BotScheduler
 from bondbot.vk.client import VkClient
 from bondbot.vk.handlers import BotHandlers
 from bondbot.vk.longpoll import VkLongPoll
@@ -28,7 +29,11 @@ def setup_logging() -> None:
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 
 
-async def start_health(settings: Settings, db: Database) -> web.AppRunner:
+async def start_health(
+    settings: Settings,
+    db: Database,
+    scheduler: BotScheduler | None = None,
+) -> web.AppRunner:
     app = web.Application()
 
     async def healthz(_: web.Request) -> web.Response:
@@ -39,6 +44,10 @@ async def start_health(settings: Settings, db: Database) -> web.AppRunner:
                 "positions": len(db.positions()),
                 "vk": settings.vk_configured,
                 "llm": settings.llm_configured,
+                "scheduler": bool(scheduler and scheduler.started),
+                "last_market_refresh": db.kv_get("last_market_refresh") or None,
+                "alerts_sent_today": db.alerts_sent_today(),
+                "last_jobs": db.last_jobs(5),
             }
         )
 
@@ -70,7 +79,9 @@ async def run() -> None:
     vk = VkClient(settings)
     handlers = BotHandlers(settings, db, vk)
     longpoll = VkLongPoll(vk, db, handlers.handle_update)
-    health = await start_health(settings, db)
+    scheduler = BotScheduler(settings, db, vk)
+    scheduler.start()
+    health = await start_health(settings, db, scheduler)
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -86,6 +97,7 @@ async def run() -> None:
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+        scheduler.shutdown()
         await health.cleanup()
         await vk.close()
         db.close()

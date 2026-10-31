@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from bondbot.data.quality import sanitize_bond, sanitize_position
 from bondbot.models import Bond, Coupon, PortfolioPosition
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bonds (
@@ -86,6 +86,45 @@ CREATE TABLE IF NOT EXISTS strategy_audit (
     result_json TEXT NOT NULL,
     version TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_strategy_audit_kind
+    ON strategy_audit(kind, id);
+
+CREATE TABLE IF NOT EXISTS job_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_runs_started
+    ON job_runs(started_at DESC);
+
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    isin TEXT,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    message TEXT NOT NULL,
+    sent_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_sent
+    ON alerts(sent_at, id);
+
+CREATE TABLE IF NOT EXISTS new_issues (
+    isin TEXT PRIMARY KEY,
+    first_seen TEXT NOT NULL,
+    name TEXT,
+    is_initial INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_new_issues_seen
+    ON new_issues(first_seen DESC);
 """
 
 
@@ -162,6 +201,20 @@ class Database:
                 "ON strategy_audit(kind, id)"
             )
             version = 2
+
+        if version < 3:
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_job_runs_started "
+                "ON job_runs(started_at DESC)"
+            )
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alerts_sent ON alerts(sent_at, id)"
+            )
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_new_issues_seen "
+                "ON new_issues(first_seen DESC)"
+            )
+            version = 3
 
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
@@ -457,3 +510,136 @@ class Database:
                 }
             )
         return audits
+
+    def count_bonds(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) AS count FROM bonds").fetchone()
+        return int(row["count"]) if row else 0
+
+    def start_job(self, name: str, started_at: datetime | None = None) -> int:
+        payload = (started_at or datetime.now(timezone.utc)).isoformat()
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO job_runs (name, started_at, status) VALUES (?, ?, 'running')",
+                (name, payload),
+            )
+        return int(cursor.lastrowid or 0)
+
+    def finish_job(
+        self,
+        job_id: int,
+        status: str,
+        details: dict[str, Any] | None = None,
+        finished_at: datetime | None = None,
+    ) -> None:
+        payload = (finished_at or datetime.now(timezone.utc)).isoformat()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE job_runs SET finished_at = ?, status = ?, details_json = ? "
+                "WHERE id = ?",
+                (
+                    payload,
+                    status,
+                    json.dumps(details or {}, ensure_ascii=False, default=str),
+                    job_id,
+                ),
+            )
+
+    def last_jobs(self, limit: int = 10) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT id, name, started_at, finished_at, status, details_json "
+            "FROM job_runs ORDER BY id DESC LIMIT ?",
+            (max(1, limit),),
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                details = json.loads(row["details_json"])
+            except json.JSONDecodeError:
+                details = {}
+            result.append(
+                {
+                    "id": int(row["id"]),
+                    "name": row["name"],
+                    "started_at": row["started_at"],
+                    "finished_at": row["finished_at"],
+                    "status": row["status"],
+                    "details": details,
+                }
+            )
+        return result
+
+    def save_alert(
+        self,
+        kind: str,
+        severity: str,
+        message: str,
+        dedupe_key: str,
+        isin: str | None = None,
+        created_at: datetime | None = None,
+    ) -> int:
+        payload = (created_at or datetime.now(timezone.utc)).isoformat()
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT OR IGNORE INTO alerts "
+                "(created_at, kind, severity, isin, dedupe_key, message) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (payload, kind, severity, isin, dedupe_key, message),
+            )
+        if cursor.rowcount == 0:
+            return 0
+        return int(cursor.lastrowid or 0)
+
+    def unsent_alerts(self, limit: int = 20) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT id, created_at, kind, severity, isin, message "
+            "FROM alerts WHERE sent_at IS NULL ORDER BY id LIMIT ?",
+            (max(1, limit),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_alert_sent(self, alert_id: int, sent_at: datetime | None = None) -> None:
+        payload = (sent_at or datetime.now(timezone.utc)).isoformat()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE alerts SET sent_at = ? WHERE id = ? AND sent_at IS NULL",
+                (payload, alert_id),
+            )
+
+    def alerts_sent_today(self) -> int:
+        today = datetime.now(timezone.utc).date().isoformat()
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS count FROM alerts WHERE sent_at LIKE ?",
+            (f"{today}%",),
+        ).fetchone()
+        return int(row["count"]) if row else 0
+
+    def record_new_issues(self, bonds: list[Bond]) -> list[str]:
+        """Запоминает новые ISIN. При первой загрузке помечает их как initial."""
+        known_issues = self.conn.execute(
+            "SELECT COUNT(*) AS count FROM new_issues"
+        ).fetchone()
+        initial = 1 if self.count_bonds() == 0 or not known_issues or known_issues["count"] == 0 else 0
+        now = datetime.now(timezone.utc).isoformat()
+        new_isins: list[str] = []
+        with self.conn:
+            for bond in bonds:
+                cursor = self.conn.execute(
+                    "INSERT OR IGNORE INTO new_issues (isin, first_seen, name, is_initial) "
+                    "VALUES (?, ?, ?, ?)",
+                    (bond.isin, now, bond.name, initial),
+                )
+                if cursor.rowcount:
+                    new_isins.append(bond.isin)
+        return new_isins
+
+    def recent_new_issues(self, days: int = 7, limit: int = 20) -> list[dict[str, Any]]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, days))).isoformat()
+        rows = self.conn.execute(
+            "SELECT n.isin, n.first_seen, b.name, b.ytm_pct, b.rating, "
+            "b.duration_years, b.price_pct, b.volume_mn_rub "
+            "FROM new_issues n LEFT JOIN bonds b ON b.isin = n.isin "
+            "WHERE n.is_initial = 0 AND n.first_seen >= ? "
+            "ORDER BY n.first_seen DESC LIMIT ?",
+            (cutoff, max(1, limit)),
+        ).fetchall()
+        return [dict(row) for row in rows]

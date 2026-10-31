@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -139,10 +140,30 @@ class CbrKeyRateClient:
     async def fetch(self) -> KeyRateSnapshot:
         if self._session is None:
             raise RuntimeError("client is not started")
-        async with self._session.get(self.settings.key_rate_url) as response:
-            if response.status >= 400:
-                raise RuntimeError(f"CBR HTTP {response.status}")
-            html = await response.text()
+        last_error: Exception | None = None
+        html = ""
+        for attempt in range(1, 4):
+            try:
+                async with self._session.get(self.settings.key_rate_url) as response:
+                    if response.status >= 500:
+                        raise aiohttp.ClientResponseError(
+                            response.request_info,
+                            response.history,
+                            status=response.status,
+                            message=f"CBR HTTP {response.status}",
+                        )
+                    if response.status >= 400:
+                        raise RuntimeError(f"CBR HTTP {response.status}")
+                    html = await response.text()
+                break
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                last_error = exc
+                if attempt >= 3:
+                    raise
+                log.warning("CBR attempt %s failed: %s", attempt, exc)
+                await asyncio.sleep(1.0 * attempt)
+        if not html:
+            raise RuntimeError(f"CBR unavailable: {last_error}")
         snapshot = parse_key_rate(html, self.settings.key_rate_url)
         if snapshot is None:
             raise ValueError("CBR key rate table not found")

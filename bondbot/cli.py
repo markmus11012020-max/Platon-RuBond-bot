@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from dataclasses import replace
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
@@ -19,6 +20,9 @@ from bondbot.strategy.render import (
     render_exit_plan,
     render_safe_list,
 )
+from bondbot.services.backup import backup_database
+from bondbot.services.digest import build_digest
+from bondbot.services.refresh import refresh_details, refresh_market
 from bondbot.strategy.safe import build_safe_list
 
 log = logging.getLogger("bondbot")
@@ -44,12 +48,73 @@ def _print_bond(bond: Bond) -> None:
 
 async def cmd_update(args: argparse.Namespace, db: Database) -> None:
     settings = load_settings()
-    async with SmartLabClient(settings) as client:
-        bonds = await client.fetch_screener(pages=args.pages)
-    count = db.upsert_bonds(bonds)
-    print(f"Загружено/обновлено: {count} бумаг")
-    for bond in sorted(bonds, key=lambda item: item.ytm_pct or 0, reverse=True)[:5]:
+    if args.pages is not None:
+        settings = replace(settings, smartlab_pages=args.pages)
+    try:
+        result = await refresh_market(settings, db)
+    except Exception as exc:
+        print(f"Не удалось обновить данные: {exc}")
+        return
+    print(
+        f"Источник: {result.source}; просмотрено {result.seen}, "
+        f"обновлено {result.upserted}, новых {len(result.new_isins)}"
+    )
+    if result.errors:
+        print("Ошибки источников:")
+        for error in result.errors:
+            print(f"  - {error}")
+    for bond in sorted(db.list_bonds(), key=lambda item: item.ytm_pct or 0, reverse=True)[:5]:
         _print_bond(bond)
+
+
+async def cmd_details(args: argparse.Namespace, db: Database) -> None:
+    settings = load_settings()
+    try:
+        updated, errors = await refresh_details(settings, db)
+    except Exception as exc:
+        print(f"Не удалось обновить карточки: {exc}")
+        return
+    print(f"Обновлено карточек: {updated}")
+    for error in errors:
+        print(f"  - {error}")
+
+
+async def cmd_backup(args: argparse.Namespace, db: Database) -> None:
+    settings = load_settings()
+    try:
+        path = backup_database(
+            db.path,
+            args.dir or settings.backup_dir,
+            keep=args.keep or settings.backup_keep,
+        )
+    except Exception as exc:
+        print(f"Не удалось сделать бэкап: {exc}")
+        return
+    print(f"Бэкап: {path}")
+
+
+async def cmd_digest(args: argparse.Namespace, db: Database) -> None:
+    settings = load_settings()
+    try:
+        snapshot = await KeyRateService(settings, db).get()
+    except Exception as exc:
+        print(f"Не удалось получить ставку ЦБ: {exc}")
+        return
+    print(build_digest(settings, db, snapshot))
+
+
+async def cmd_jobs(args: argparse.Namespace, db: Database) -> None:
+    jobs = db.last_jobs(limit=args.limit)
+    if not jobs:
+        print("Запусков ещё не было")
+        return
+    for job in jobs:
+        print(
+            f"{job['id']}\t{job['name']}\t{job['status']}\t"
+            f"{job['started_at']}\t{job['finished_at'] or '—'}"
+        )
+        if job["details"]:
+            print(f"    {job['details']}")
 
 
 async def cmd_bond(args: argparse.Namespace, db: Database) -> None:
@@ -271,6 +336,14 @@ async def async_main(args: argparse.Namespace) -> None:
     try:
         if args.command == "update":
             await cmd_update(args, db)
+        elif args.command == "details":
+            await cmd_details(args, db)
+        elif args.command == "backup":
+            await cmd_backup(args, db)
+        elif args.command == "digest":
+            await cmd_digest(args, db)
+        elif args.command == "jobs":
+            await cmd_jobs(args, db)
         elif args.command == "bond":
             await cmd_bond(args, db)
         elif args.command == "screen":
@@ -300,8 +373,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", default=None, help="path to SQLite (default from BONDBOT_DB_PATH)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    update = sub.add_parser("update", help="fetch smart-lab screener")
+    update = sub.add_parser("update", help="refresh smart-lab + MOEX market data")
     update.add_argument("--pages", type=int, default=None)
+
+    sub.add_parser("details", help="refresh watchlist and position cards")
+
+    backup = sub.add_parser("backup", help="create SQLite backup")
+    backup.add_argument("--dir", default=None)
+    backup.add_argument("--keep", type=int, default=None)
+
+    sub.add_parser("digest", help="build daily digest text")
+
+    jobs = sub.add_parser("jobs", help="show recent background jobs")
+    jobs.add_argument("--limit", type=int, default=10)
 
     bond = sub.add_parser("bond", help="fetch bond detail")
     bond.add_argument("isin")
