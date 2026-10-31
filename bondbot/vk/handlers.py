@@ -85,7 +85,8 @@ ADMIN_HELP_TEXT = HELP_TEXT + """
 /portfolio, /position, /watch, /exit, /alloc, /stress, /strategy, /calendar,
 /doctor, /whatsnew, /journal, /connect
 
-Обновить портфель: отправь боту файл portfolio.html из Smart-Lab."""
+Обновить портфель: отправь боту файл portfolio.html из Smart-Lab
+или /portfolio url <прямая ссылка на html>."""
 
 MAIN_KEYBOARD = {
     "one_time": False,
@@ -468,6 +469,14 @@ class BotHandlers:
                 return
 
         if attachments:
+            log.info(
+                "attachments from %s: %s",
+                from_id,
+                [
+                    (item.get("type"), (item.get("doc") or {}).get("title"))
+                    for item in attachments
+                ],
+            )
             if not is_admin:
                 await self._reply(peer_id, "Обновлять портфель может только администратор сообщества.")
                 return
@@ -517,11 +526,28 @@ class BotHandlers:
         elif command == "/connect":
             await self._connect(peer_id, is_admin, is_chat)
         elif command == "/portfolio":
-            if argument.strip().lower() in {"import", "обновить", "update"}:
+            command_argument = argument.strip()
+            if command_argument.lower().startswith("url "):
+                url = command_argument[4:].strip()
+                if not url.startswith(("http://", "https://")):
+                    await self._reply(peer_id, "Нужна прямая http(s)-ссылка на portfolio.html.")
+                else:
+                    try:
+                        raw = await self.vk.download(url)
+                        try:
+                            html = raw.decode("utf-8")
+                        except UnicodeDecodeError:
+                            html = raw.decode("cp1251", errors="replace")
+                        await self._import_portfolio_html(peer_id, html, source="url")
+                    except Exception as exc:
+                        log.warning("portfolio URL import failed: %s", exc)
+                        await self._reply(peer_id, f"Не удалось скачать файл: {exc}")
+            elif command_argument.lower() in {"import", "обновить", "update"}:
                 await self._reply(
                     peer_id,
                     "Отправь боту файл portfolio.html из Smart-Lab — "
-                    "я заменю состав портфеля и обновлю карточки.",
+                    "я заменю состав портфеля и обновлю карточки.\n"
+                    "Если VK не передаёт файл: /portfolio url <прямая ссылка на html>."
                 )
             else:
                 await self._reply(peer_id, format_portfolio(self.settings, self.db))
@@ -609,7 +635,14 @@ class BotHandlers:
                 document = doc
                 break
         if document is None:
-            await self._reply(peer_id, "Пришли файл portfolio.html из Smart-Lab.")
+            types = ", ".join(
+                str(item.get("type") or "unknown") for item in attachments
+            )
+            await self._reply(
+                peer_id,
+                f"Вижу вложения ({types}), но это не документ portfolio.html. "
+                "Отправь файл как документ или используй /portfolio url <ссылка>.",
+            )
             return
         url = str(document.get("url") or "")
         if not url:
@@ -621,10 +654,24 @@ class BotHandlers:
                 html = raw.decode("utf-8")
             except UnicodeDecodeError:
                 html = raw.decode("cp1251", errors="replace")
+        except Exception as exc:
+            log.warning("portfolio download failed: %s", exc)
+            await self._reply(peer_id, f"Не удалось скачать файл: {exc}")
+            return
+        await self._import_portfolio_html(peer_id, html, source="vk-document")
+
+    async def _import_portfolio_html(
+        self,
+        peer_id: int,
+        html: str,
+        *,
+        source: str,
+    ) -> None:
+        try:
             positions = import_portfolio_html(
                 self.db,
                 html,
-                source_url="vk-document",
+                source_url=source,
             )
         except Exception as exc:
             log.warning("portfolio import failed: %s", exc)
@@ -636,7 +683,7 @@ class BotHandlers:
             "Обновляю карточки бумаг...",
         )
         try:
-            updated, errors = await refresh_details(self.settings, self.db)
+            _, errors = await refresh_details(self.settings, self.db)
             if errors:
                 log.warning("portfolio detail refresh errors: %s", errors)
         except Exception as exc:

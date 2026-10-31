@@ -344,6 +344,33 @@ def test_document_import_replaces_portfolio(db: Database, monkeypatch) -> None:
     assert all(position.isin != "STALE" for position in db.positions())
 
 
+def test_portfolio_url_import(db: Database, monkeypatch) -> None:
+    handlers, vk = _owner_handlers(db)
+    html = (FIXTURES / "portfolio_synthetic.html").read_text(encoding="utf-8")
+    vk.downloaded = html.encode("utf-8")
+
+    async def fake_refresh(*args, **kwargs):
+        return 0, []
+
+    monkeypatch.setattr("bondbot.vk.handlers.refresh_details", fake_refresh)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/portfolio url https://example.com/portfolio.html",
+                    }
+                },
+            }
+        )
+    )
+    assert "Портфель обновлён: 2 позиций" in vk.sent[-2]["message"]
+    assert "1 517 400 ₽" in vk.sent[-1]["message"]
+
+
 def test_dialog_history_roundtrip(db: Database) -> None:
     handlers, _ = _owner_handlers(db)
     handlers._save_dialog(ADMIN_ID, "вопрос", "ответ")
