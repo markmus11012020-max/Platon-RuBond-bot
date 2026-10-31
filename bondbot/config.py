@@ -101,7 +101,7 @@ class Settings:
     # LLM assistant
     llm_enabled: bool = True
     llm_max_tool_rounds: int = 4
-    llm_max_tokens: int = 900
+    llm_max_tokens: int = 1800
     llm_timeout: int = 45
 
     # Default screening profile
@@ -181,7 +181,7 @@ def load_settings() -> Settings:
         live_search_ttl_hours=_int("BONDBOT_LIVE_SEARCH_TTL_HOURS", 6),
         llm_enabled=_bool("BONDBOT_LLM_ENABLED", True),
         llm_max_tool_rounds=_int("BONDBOT_LLM_MAX_TOOL_ROUNDS", 4),
-        llm_max_tokens=_int("BONDBOT_LLM_MAX_TOKENS", 900),
+        llm_max_tokens=_int("BONDBOT_LLM_MAX_TOKENS", 1800),
         llm_timeout=_int("BONDBOT_LLM_TIMEOUT", 45),
         min_yield_pct=_float("BONDBOT_MIN_YIELD_PCT", 14.0),
         max_yield_pct=_float("BONDBOT_MAX_YIELD_PCT", 35.0),

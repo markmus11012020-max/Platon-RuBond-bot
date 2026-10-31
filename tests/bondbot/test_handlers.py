@@ -208,6 +208,17 @@ def test_free_text_goes_to_dialog(db: Database) -> None:
     assert "LLM не настроен" in vk.sent[-1]["message"]
 
 
+def test_long_reply_is_split_not_truncated(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    text = "\n".join(f"Строка {index}: " + ("данные " * 30) for index in range(100))
+    asyncio.run(handlers._reply(CHAT_PEER, text))
+    assert len(vk.sent) > 1
+    combined = "\n".join(item["message"] for item in vk.sent)
+    assert "Строка 0" in combined
+    assert "Строка 99" in combined
+    assert all(len(item["message"]) <= 3500 for item in vk.sent)
+
+
 def test_dialog_history_roundtrip(db: Database) -> None:
     handlers, _ = _owner_handlers(db)
     handlers._save_dialog(ADMIN_ID, "вопрос", "ответ")

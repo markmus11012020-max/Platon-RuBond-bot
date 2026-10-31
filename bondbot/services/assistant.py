@@ -42,7 +42,8 @@ SYSTEM_PROMPT = """Ты — старший аналитик рынка росс�
    Не проси ISIN, пока не проверил базу и новости: у нас есть поиск по названию.
 8. Пиши простым деловым текстом без Markdown: без #, **, *, таблиц и обратных кавычек.
    Списки — через «•», заголовки — обычной строкой с двоеточием.
-8. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
+9. Отвечай компактно: не более 8–10 пунктов, без воды и повторения вопроса.
+10. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
 """
 
 TOOL_SPECS: list[dict[str, Any]] = [
@@ -251,7 +252,8 @@ class Assistant:
                 messages.append({"role": role, "content": content[:1500]})
         messages.append({"role": "user", "content": question})
         try:
-            for _ in range(max(1, self.settings.llm_max_tool_rounds)):
+            empty_retry = False
+            for _ in range(max(1, self.settings.llm_max_tool_rounds) + 1):
                 response = await self.client.chat.completions.create(
                     model=self.settings.openai_model,
                     messages=messages,
@@ -260,11 +262,26 @@ class Assistant:
                     temperature=0.2,
                     max_tokens=self.settings.llm_max_tokens,
                 )
-                message = response.choices[0].message
+                choice = response.choices[0]
+                message = choice.message
+                finish_reason = getattr(choice, "finish_reason", None)
                 tool_calls = getattr(message, "tool_calls", None)
                 if not tool_calls:
                     content = to_plain_text(message.content or "")
-                    return content or "Не удалось сформулировать ответ. Попробуй переформулировать вопрос."
+                    if content:
+                        if finish_reason == "length":
+                            log.warning("LLM answer reached max_tokens=%s", self.settings.llm_max_tokens)
+                        return content
+                    if not empty_retry:
+                        empty_retry = True
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": "Сформулируй краткий ответ по-русски по существу вопроса.",
+                            }
+                        )
+                        continue
+                    return "Не удалось сформулировать ответ. Попробуй переформулировать вопрос."
                 messages.append(
                     {
                         "role": "assistant",

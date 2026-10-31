@@ -114,8 +114,38 @@ def _num(value: float | None, suffix: str = "", digits: int = 2) -> str:
 
 
 def _short(text: str, limit: int) -> str:
+    # Длинные сообщения разбиваются в _reply, а не обрезаются.
+    return (text or "").strip()
+
+
+def _split_message(text: str, limit: int = 3500) -> list[str]:
     text = (text or "").strip()
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+    if not text:
+        return [""]
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in text.splitlines():
+        while len(line) > limit:
+            if current:
+                chunks.append("\n".join(current).strip())
+                current = []
+                size = 0
+            chunks.append(line[:limit])
+            line = line[limit:]
+        add = len(line) + (1 if current else 0)
+        if size + add > limit:
+            chunks.append("\n".join(current).strip())
+            current = [line]
+            size = len(line)
+        else:
+            current.append(line)
+            size += add
+    if current:
+        chunks.append("\n".join(current).strip())
+    return [chunk for chunk in chunks if chunk] or [text[:limit]]
 
 
 def format_portfolio(settings: Settings, db: Database) -> str:
@@ -755,12 +785,14 @@ class BotHandlers:
         *,
         keyboard: dict | None = None,
     ) -> None:
+        chunks = _split_message(_short(text, 3900), limit=3500)
         try:
-            await self.vk.send_message(
-                peer_id,
-                _short(text, 3900),
-                keyboard=keyboard,
-            )
+            for index, chunk in enumerate(chunks):
+                await self.vk.send_message(
+                    peer_id,
+                    chunk,
+                    keyboard=keyboard if index == len(chunks) - 1 else None,
+                )
         except VkApiError as exc:
             log.warning("reply to %s failed: %s", peer_id, exc)
 

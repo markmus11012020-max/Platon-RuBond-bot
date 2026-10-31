@@ -33,8 +33,8 @@ def _pct(value: float | None, digits: int = 1) -> str:
 
 
 def _short(text: str, limit: int = _MAX_MESSAGE) -> str:
-    text = (text or "").strip()
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+    # Длинные сообщения разбивает VK-слой; здесь ничего не обрезаем.
+    return (text or "").strip()
 
 
 def _share(value: float | None) -> str:
