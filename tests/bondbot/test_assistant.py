@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from bondbot.config import load_settings
 from bondbot.db import Database
-from bondbot.services.assistant import TOOL_SPECS, Assistant
+from bondbot.services.assistant import TOOL_SPECS, Assistant, to_plain_text
 
 
 class FakeCompletions:
@@ -38,6 +38,27 @@ class FakeClient:
 def test_tool_specs_are_complete() -> None:
     names = {item["function"]["name"] for item in TOOL_SPECS}
     assert {"get_bond", "screen_bonds", "portfolio", "market_rate", "news", "stress"} <= names
+
+
+def test_to_plain_text_removes_markdown() -> None:
+    source = """## Заголовок
+
+**Факт события**
+- пункт один
+- пункт два
+
+| Дата | Событие |
+|---|---|
+| 31.10 | техдефолт |
+"""
+    text = to_plain_text(source)
+    assert "##" not in text
+    assert "**" not in text
+    assert "|---" not in text
+    assert "Заголовок" in text
+    assert "• пункт один" in text
+    assert "Дата · Событие" in text
+    assert "31.10 · техдефолт" in text
 
 
 def test_assistant_tool_roundtrip(tmp_path) -> None:
