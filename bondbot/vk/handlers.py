@@ -7,6 +7,7 @@ import time
 from datetime import date, datetime
 
 from bondbot.analytics.bonds import (
+    bond_rating_label,
     coupon_type_label,
     required_daily_volume_mn,
     screen_bonds,
@@ -235,7 +236,7 @@ def format_bond(bond: Bond) -> str:
         f"📌 {bond.name} ({bond.isin})",
         f"Цена: {_num(bond.price_pct, '%')} · YTM: {_num(bond.ytm_pct, '%')} · "
         f"дюрация: {_num(bond.duration_years)} лет",
-        f"Рейтинг: {bond.rating or '—'} · G-спред: {_num(bond.g_spread_bp, ' б.п.', 0)}",
+        f"Рейтинг: {bond_rating_label(bond)} · G-спред: {_num(bond.g_spread_bp, ' б.п.', 0)}",
         f"Купон: {_num(bond.coupon_rub, ' ₽')} × {_num(bond.coupon_freq, '', 0)} · "
         f"тип: {coupon_type_label(bond.coupon_type)} · "
         f"НКД: {_num(bond.nkd_rub, ' ₽')}",
@@ -335,7 +336,7 @@ def format_screen(
         missing = [
             label
             for label, value in (
-                ("рейтинг", bond.rating),
+                ("рейтинг", bond.rating if not bond_rating_label(bond).startswith("ОФЗ") else "ok"),
                 ("тип", bond.coupon_type),
                 ("частота", bond.coupon_freq),
             )
@@ -347,7 +348,7 @@ def format_screen(
             f"  YTM {_num(bond.ytm_pct, '%')} · дюр. {_num(bond.duration_years)} · "
             f"погашение {bond.maturity_date or '—'} · оферта {bond.offer_date or '—'}\n"
             f"  купон {coupon_type_label(bond.coupon_type)} "
-            f"{_num(bond.coupon_freq, '/год', 0)} · {bond.rating or '—'} · "
+            f"{_num(bond.coupon_freq, '/год', 0)} · {bond_rating_label(bond)} · "
             f"цена {_num(bond.price_pct, '%')} · оборот {_num(bond.volume_mn_rub, ' млн ₽')}"
             f"{data_note}"
         )

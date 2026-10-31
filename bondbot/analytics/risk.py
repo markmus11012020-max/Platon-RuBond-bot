@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from bondbot.analytics.bonds import rating_rank
+from bondbot.analytics.bonds import is_ofz, rating_rank
 from bondbot.models import Bond, PortfolioPosition, utcnow
 from bondbot.strategy.stability import _RATING_MAX
 from bondbot.strategy.valuation import modified_duration
@@ -42,6 +42,8 @@ class StressResult:
 
 
 def _credit_factor(bond: Bond) -> RiskFactor:
+    if is_ofz(bond):
+        return RiskFactor("credit", 0.0, 0.35, "ОФЗ, суверенный кредит")
     rank = rating_rank(bond.rating)
     if rank < 0:
         score = 75.0
@@ -114,7 +116,11 @@ def _data_factor(bond: Bond, now: datetime) -> RiskFactor:
         bond.price_pct,
         bond.volume_mn_rub,
     )
-    missing = sum(1 for value in fields if value is None)
+    missing = sum(
+        1
+        for value in fields
+        if value is None and not (value is bond.rating and is_ofz(bond))
+    )
     score = min(100.0, missing / len(fields) * 100.0)
     fetched = bond.fetched_at
     if fetched is None:

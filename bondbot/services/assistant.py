@@ -30,7 +30,8 @@ from bondbot.strategy.valuation import value_bond
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """Ты — старший аналитик рынка российских облигаций.
-Твоя задача — помогать владельцу портфеля понимать доходность, риски и идеи.
+Твоя задача — помогать инвестору понимать доходность, риски и идеи.
+Не предполагай личный портфель или профиль, если пользователь сам его не назвал.
 
 Жёсткие правила:
 1. Не выдумывай числа, эмитентов, рейтинги и события. Все числа бери только из инструментов.
@@ -43,12 +44,15 @@ SYSTEM_PROMPT = """Ты — старший аналитик рынка росс�
    Не проси ISIN, пока не проверил базу и новости: у нас есть поиск по названию.
 8. Если просят постоянный/фиксированный купон или частоту выплат 2/4/12 —
    вызывай screen_bonds(coupon_type="fixed", coupon_freqs=[...]).
-9. По вопросам ИИС-3, НДФЛ и налога на купон всегда вызывай tax_info,
+9. Если просят без ограничения по доходности или дюрации — используй
+   screen_bonds(ignore_yield=true / ignore_duration=true), не подставляй лимиты профиля.
+10. По вопросам ИИС-3, НДФЛ и налога на купон всегда вызывай tax_info,
    не пересказывай нормы по памяти.
-10. Пиши простым деловым текстом без Markdown: без #, **, *, таблиц и обратных кавычек.
+11. Пиши простым деловым текстом без Markdown: без #, **, *, таблиц и обратных кавычек.
    Списки — через «•», заголовки — обычной строкой с двоеточием.
-11. Отвечай компактно: не более 8–10 пунктов, без воды и повторения вопроса.
-12. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
+12. Не повторяй одинаковый tool-вызов. После 1–2 вызовов сформулируй ответ.
+13. Отвечай компактно: не более 8–10 пунктов, без воды и повторения вопроса.
+14. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
 """
 
 TOOL_SPECS: list[dict[str, Any]] = [
@@ -95,6 +99,8 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     "offset": {"type": "integer", "minimum": 0},
                     "min_yield_pct": {"type": "number"},
                     "max_yield_pct": {"type": "number"},
+                    "ignore_yield": {"type": "boolean"},
+                    "ignore_duration": {"type": "boolean"},
                     "min_duration_years": {"type": "number"},
                     "max_duration_years": {"type": "number"},
                     "maturity_from": {"type": "string", "description": "YYYY-MM-DD"},
@@ -507,11 +513,15 @@ class Assistant:
 
         coupon_type = str(arguments.get("coupon_type") or "").strip().lower() or None
         coupon_freqs = arguments.get("coupon_freqs") or None
+        ignore_yield = bool(arguments.get("ignore_yield"))
+        ignore_duration = bool(arguments.get("ignore_duration"))
         filters = ScreenFilters(
-            min_yield_pct=number("min_yield_pct", self.settings.min_yield_pct),
-            max_yield_pct=number("max_yield_pct", cap.value_pct),
+            min_yield_pct=0.0 if ignore_yield else number("min_yield_pct", self.settings.min_yield_pct),
+            max_yield_pct=100.0 if ignore_yield else number("max_yield_pct", cap.value_pct),
             min_duration_years=number("min_duration_years", None),
-            max_duration_years=number("max_duration_years", self.settings.max_duration_years),
+            max_duration_years=None if ignore_duration else number(
+                "max_duration_years", self.settings.max_duration_years
+            ),
             maturity_from=value_date("maturity_from"),
             maturity_to=value_date("maturity_to"),
             offer_from=value_date("offer_from"),

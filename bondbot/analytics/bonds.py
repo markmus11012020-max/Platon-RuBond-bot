@@ -72,6 +72,21 @@ COUPON_TYPE_ALIASES = {
 }
 
 
+def is_ofz(bond: Bond) -> bool:
+    name = (bond.name or "").upper().replace("Ё", "Е")
+    return name.startswith("ОФЗ") or "ОФЗ " in name
+
+
+def bond_rating_rank(bond: Bond) -> int:
+    return rating_rank("AAA") if is_ofz(bond) else rating_rank(bond.rating)
+
+
+def bond_rating_label(bond: Bond) -> str:
+    if is_ofz(bond):
+        return "ОФЗ (суверен)"
+    return bond.rating or "—"
+
+
 def coupon_type_label(value: str | None) -> str:
     return COUPON_TYPE_LABELS.get(value or "", value or "—")
 
@@ -108,14 +123,13 @@ def _complete_data(bond: Bond) -> bool:
         for value in (
             bond.ytm_pct,
             bond.duration_years,
-            bond.rating,
             bond.price_pct,
             bond.volume_mn_rub,
             bond.coupon_type,
             bond.coupon_freq,
             bond.maturity_date,
         )
-    )
+    ) and (bond.rating is not None or is_ofz(bond))
 
 
 def _sort_value(item: ScreenResult, sort_by: str) -> Any:
@@ -127,7 +141,7 @@ def _sort_value(item: ScreenResult, sort_by: str) -> Any:
         "offer": bond.offer_date,
         "coupon_freq": bond.coupon_freq,
         "coupon_type": coupon_type_label(bond.coupon_type),
-        "rating": rating_rank(bond.rating),
+        "rating": bond_rating_rank(bond),
         "price": bond.price_pct,
         "volume": bond.volume_mn_rub,
         "issue_size": bond.issue_size_rub,
@@ -175,7 +189,7 @@ def screen_bonds(
                 for freq in filters.coupon_freqs
             ):
                 continue
-        if not meets_min_rating(bond.rating, filters.min_rating):
+        if not is_ofz(bond) and not meets_min_rating(bond.rating, filters.min_rating):
             continue
         if filters.min_price_pct is not None and bond.price_pct is not None:
             if bond.price_pct < filters.min_price_pct:
@@ -207,7 +221,7 @@ def screen_bonds(
         share = position_share_of_volume(
             filters.position_size_rub or 1_000_000, bond.volume_mn_rub
         )
-        rating_bonus = (rating_rank(bond.rating) - 10) * 0.05
+        rating_bonus = (bond_rating_rank(bond) - 10) * 0.05
         liquidity_bonus = min((bond.volume_mn_rub or 0) / 200, 1.0)
         score = bond.ytm_pct + rating_bonus + liquidity_bonus
         results.append(ScreenResult(bond=bond, score=round(score, 4), liquidity_share=share))

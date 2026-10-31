@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from bondbot.analytics.bonds import coupon_type_label
+from bondbot.analytics.bonds import bond_rating_label, coupon_type_label
 from bondbot.analytics.risk import assess_bond_risk
 from bondbot.config import Settings
 from bondbot.db import Database
@@ -52,7 +52,7 @@ def issuer_payload(
                 "ytm_pct": bond.ytm_pct,
                 "price_pct": bond.price_pct,
                 "duration_years": bond.duration_years,
-                "rating": bond.rating,
+                "rating": bond_rating_label(bond),
                 "coupon_type": bond.coupon_type,
                 "coupon_freq": bond.coupon_freq,
                 "volume_mn_rub": bond.volume_mn_rub,

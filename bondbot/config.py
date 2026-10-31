@@ -100,7 +100,7 @@ class Settings:
 
     # LLM assistant
     llm_enabled: bool = True
-    llm_max_tool_rounds: int = 4
+    llm_max_tool_rounds: int = 6
     llm_max_tokens: int = 1800
     llm_timeout: int = 45
     llm_daily_token_limit: int = 500_000
@@ -184,7 +184,7 @@ def load_settings() -> Settings:
         live_search_timeout=_int("BONDBOT_LIVE_SEARCH_TIMEOUT", 15),
         live_search_ttl_hours=_int("BONDBOT_LIVE_SEARCH_TTL_HOURS", 6),
         llm_enabled=_bool("BONDBOT_LLM_ENABLED", True),
-        llm_max_tool_rounds=_int("BONDBOT_LLM_MAX_TOOL_ROUNDS", 4),
+        llm_max_tool_rounds=_int("BONDBOT_LLM_MAX_TOOL_ROUNDS", 6),
         llm_max_tokens=_int("BONDBOT_LLM_MAX_TOKENS", 1800),
         llm_timeout=_int("BONDBOT_LLM_TIMEOUT", 45),
         llm_daily_token_limit=_int("BONDBOT_LLM_DAILY_TOKEN_LIMIT", 500_000),

@@ -104,17 +104,23 @@ def parse_screen_query(
         )
     )
 
-    y_min, y_max = _range(text, r"доходност\w*")
-    if y_min is not None:
-        filters = replace(filters, min_yield_pct=y_min)
-    if y_max is not None:
-        filters = replace(filters, max_yield_pct=y_max)
+    if "без ограничения по доходности" in text:
+        filters = replace(filters, min_yield_pct=0.0, max_yield_pct=100.0)
+    else:
+        y_min, y_max = _range(text, r"доходност\w*")
+        if y_min is not None:
+            filters = replace(filters, min_yield_pct=y_min)
+        if y_max is not None:
+            filters = replace(filters, max_yield_pct=y_max)
 
-    d_min, d_max = _range(text, r"дюрац\w*")
-    if d_min is not None:
-        filters = replace(filters, min_duration_years=d_min)
-    if d_max is not None:
-        filters = replace(filters, max_duration_years=d_max)
+    if "без ограничения по дюрации" in text:
+        filters = replace(filters, max_duration_years=None)
+    else:
+        d_min, d_max = _range(text, r"дюрац\w*")
+        if d_min is not None:
+            filters = replace(filters, min_duration_years=d_min)
+        if d_max is not None:
+            filters = replace(filters, max_duration_years=d_max)
 
     m_from, m_to = _date_range(text, r"погашени\w*")
     if m_from is not None:

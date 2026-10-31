@@ -117,6 +117,37 @@ def test_screen_sorting() -> None:
     assert [item.bond.isin for item in results] == ["LOW", "MID", "HIGH"]
 
 
+def test_ofz_passes_corporate_rating_filter() -> None:
+    bond = Bond(
+        isin="SU26207RMFS9",
+        name="ОФЗ 26207",
+        ytm_pct=15.0,
+        duration_years=2.0,
+        rating=None,
+        price_pct=100.0,
+        volume_mn_rub=100.0,
+        coupon_type="fixed",
+        coupon_freq=2.0,
+    )
+    filters = ScreenFilters(min_rating="A-", position_size_rub=1_000_000)
+    results = screen_bonds([bond], filters, required_volume_mn=20.0)
+    assert [item.bond.isin for item in results] == ["SU26207RMFS9"]
+
+
+def test_parse_unlimited_filters() -> None:
+    settings = load_settings()
+    cap = MaxYield(value_pct=24.0)
+    filters = parse_screen_query(
+        settings,
+        "без ограничения по доходности без ограничения по дюрации сортировка дюрация",
+        cap,
+    )
+    assert filters.min_yield_pct == 0.0
+    assert filters.max_yield_pct == 100.0
+    assert filters.max_duration_years is None
+    assert filters.sort_by == "duration"
+
+
 def test_screen_filters() -> None:
     bonds = [
         Bond(isin="A", name="Good", ytm_pct=17.0, duration_years=1.5, rating="AAA", volume_mn_rub=300),
