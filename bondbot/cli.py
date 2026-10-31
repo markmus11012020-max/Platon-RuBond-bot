@@ -177,10 +177,15 @@ async def cmd_screen(args: argparse.Namespace, db: Database) -> None:
     required = required_daily_volume_mn(position, settings.max_pct_daily_volume)
     results = screen_bonds(db.list_bonds(), filters, required_volume_mn=required)
     print(f"Лимит доходности: {cap.describe()}")
+    freqs_text = (
+        ", ".join(f"{value:g}" for value in filters.coupon_freqs)
+        if filters.coupon_freqs
+        else "любая"
+    )
     print(
         f"Фильтр: доходность {filters.min_yield_pct}–{filters.max_yield_pct}%, "
         f"дюрация <= {filters.max_duration_years} лет, рейтинг >= {filters.min_rating}, "
-        f"купон {filters.coupon_type or 'любой'}, выплат/год {filters.coupon_freqs or 'любая'}, "
+        f"купон {coupon_type_label(filters.coupon_type)}, выплат/год {freqs_text}, "
         f"цена {filters.min_price_pct}–{filters.max_price_pct}%, объём >= {required:.1f} млн ₽ "
         f"(позиция {position:,.0f} ₽, доля объёма <= {settings.max_pct_daily_volume:.0%})"
     )
