@@ -41,9 +41,9 @@ def preset_filters(
     if key == "conservative":
         return ScreenFilters(
             **base,
-            max_duration_years=2.0,
+            max_duration_years=2.5,
             min_rating="A-",
-            min_volume_mn_rub=50.0,
+            min_volume_mn_rub=20.0,
             min_price_pct=95.0,
             max_price_pct=105.0,
             coupon_type="fixed",

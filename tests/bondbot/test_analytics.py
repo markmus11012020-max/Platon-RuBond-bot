@@ -101,7 +101,7 @@ def test_preset_filters() -> None:
     cap = MaxYield(value_pct=24.0)
     conservative = preset_filters(settings, "консервативный", cap)
     assert conservative.coupon_type == "fixed"
-    assert conservative.max_duration_years == 2.0
+    assert conservative.max_duration_years == 2.5
     assert conservative.min_rating == "A-"
     assert conservative.only_complete_data
 

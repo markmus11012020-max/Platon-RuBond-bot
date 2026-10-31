@@ -67,6 +67,14 @@ docker compose -p platon-bond-bot -f docker-compose.bondbot.yml start
 3. Восстановить БД из бэкапа, если миграция несовместима.
 4. `docker compose -p platon-bond-bot -f docker-compose.bondbot.yml up -d --build`.
 
+## Публичный режим
+
+- `BONDBOT_PUBLIC_ACCESS=1` — доступ для участников сообщества.
+- `BONDBOT_COMMUNITY_MEMBERS_ONLY=1` — проверка через VK `groups.isMember`.
+- `BONDBOT_DIALOGUE_TTL_MINUTES=120` — короткая память диалога, без профилей.
+- `BONDBOT_LLM_DAILY_TOKEN_LIMIT=500000` — лимит на пользователя в сутки.
+- Админские команды остаются только `BONDBOT_VK_ADMIN_USER_ID`.
+
 ## Правила
 
 - Не выполнять `docker system prune`, не перезапускать `freelance-bot` и Caddy.
