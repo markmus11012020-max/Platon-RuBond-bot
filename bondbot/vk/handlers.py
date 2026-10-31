@@ -232,6 +232,7 @@ def format_portfolio(settings: Settings, db: Database) -> str:
             lines.append(f"• {_short(warning, 180)}")
     lines.append("")
     lines.append(f"Данные: {now_msk().strftime('%d.%m.%Y %H:%M')}")
+    lines.append("Обновить состав: пришли portfolio.html из Smart-Lab.")
     return _short("\n".join(lines), 3900)
 
 
@@ -473,6 +474,14 @@ class BotHandlers:
             await self._import_portfolio_attachment(peer_id, attachments)
             return
         if not text:
+            return
+        if is_admin and "портфел" in text.lower() and "обнов" in text.lower():
+            await self._reply(
+                peer_id,
+                "Чтобы я увидел новый состав, пришли файл portfolio.html из Smart-Lab "
+                "как документ в этот чат. Текст «портфель обновлён» не меняет данные "
+                "в базе бота.",
+            )
             return
 
         # VK добавляет mention сообщества к кнопкам в беседе:
