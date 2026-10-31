@@ -90,16 +90,18 @@ async def refresh_market(settings: Settings, db: Database) -> RefreshResult:
     # Новинками считаем только бумаги с рейтингом: без него нельзя оценить риск.
     new_isins = db.record_new_issues([bond for bond in bonds if bond.rating])
     upserted = db.upsert_bonds(bonds)
+    repaired = db.repair_bond_data()
     db.kv_set("last_market_refresh", utcnow().isoformat())
     source = "+".join(
         name for name, count in (("smart-lab", len(smartlab)), ("moex", len(official))) if count
     )
     log.info(
-        "market refreshed: source=%s seen=%s upserted=%s new=%s",
+        "market refreshed: source=%s seen=%s upserted=%s new=%s repaired=%s",
         source,
         len(bonds),
         upserted,
         len(new_isins),
+        repaired,
     )
     return RefreshResult(
         source=source,
@@ -139,6 +141,7 @@ async def refresh_details(settings: Settings, db: Database) -> tuple[int, list[s
                 log.warning("detail refresh %s failed: %s", isin, exc)
                 errors.append(f"{isin}: {exc}")
             await asyncio.sleep(1.0)
+    db.repair_bond_data()
     db.kv_set("last_detail_refresh", utcnow().isoformat())
     return updated, errors
 

@@ -44,6 +44,26 @@ def test_schema_version_is_set(tmp_path) -> None:
         db.close()
 
 
+def test_repair_bond_data_clears_legacy_outliers(tmp_path) -> None:
+    db = Database(str(tmp_path / "repair.db"))
+    try:
+        db.upsert_bonds([Bond(isin="OLD", name="Legacy", ytm_pct=17.0)])
+        with db.conn:
+            db.conn.execute(
+                "UPDATE bonds SET ytm_pct = 415.8, price_pct = 500, "
+                "g_spread_bp = 28352 WHERE isin = 'OLD'"
+            )
+        assert db.repair_bond_data() == 1
+        loaded = db.get_bond("OLD")
+        assert loaded is not None
+        assert loaded.ytm_pct is None
+        assert loaded.price_pct is None
+        assert loaded.g_spread_bp is None
+        assert db.repair_bond_data() == 0
+    finally:
+        db.close()
+
+
 def test_legacy_positions_table_is_migrated(tmp_path) -> None:
     path = str(tmp_path / "legacy.db")
     conn = sqlite3.connect(path)

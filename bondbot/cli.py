@@ -103,6 +103,11 @@ async def cmd_digest(args: argparse.Namespace, db: Database) -> None:
     print(build_digest(settings, db, snapshot))
 
 
+async def cmd_repair(args: argparse.Namespace, db: Database) -> None:
+    repaired = db.repair_bond_data()
+    print(f"Очищено бумаг с битыми полями: {repaired}")
+
+
 async def cmd_jobs(args: argparse.Namespace, db: Database) -> None:
     jobs = db.last_jobs(limit=args.limit)
     if not jobs:
@@ -344,6 +349,8 @@ async def async_main(args: argparse.Namespace) -> None:
             await cmd_digest(args, db)
         elif args.command == "jobs":
             await cmd_jobs(args, db)
+        elif args.command == "repair":
+            await cmd_repair(args, db)
         elif args.command == "bond":
             await cmd_bond(args, db)
         elif args.command == "screen":
@@ -386,6 +393,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     jobs = sub.add_parser("jobs", help="show recent background jobs")
     jobs.add_argument("--limit", type=int, default=10)
+
+    sub.add_parser("repair", help="clean legacy invalid numeric fields")
 
     bond = sub.add_parser("bond", help="fetch bond detail")
     bond.add_argument("isin")

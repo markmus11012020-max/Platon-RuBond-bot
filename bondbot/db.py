@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from bondbot.data.quality import sanitize_bond, sanitize_position
+from bondbot.data.quality import BOND_LIMITS, sanitize_bond, sanitize_position
 from bondbot.models import Bond, Coupon, PortfolioPosition
 
 SCHEMA_VERSION = 3
@@ -296,6 +296,24 @@ class Database:
         with self.conn:
             self.conn.executemany(query, rows)
         return len(rows)
+
+    def repair_bond_data(self) -> int:
+        """Чистит старые битые значения, которые COALESCE-апсерт не перезаписал."""
+        fields = tuple(BOND_LIMITS)
+        assignments = ", ".join(f"{field} = ?" for field in fields)
+        repaired = 0
+        with self.conn:
+            for bond in self.list_bonds():
+                cleaned = sanitize_bond(bond)
+                if cleaned == bond:
+                    continue
+                values = [getattr(cleaned, field) for field in fields]
+                self.conn.execute(
+                    f"UPDATE bonds SET {assignments} WHERE isin = ?",
+                    (*values, bond.isin),
+                )
+                repaired += 1
+        return repaired
 
     def get_bond(self, isin: str) -> Bond | None:
         row = self.conn.execute("SELECT * FROM bonds WHERE isin = ?", (isin,)).fetchone()
