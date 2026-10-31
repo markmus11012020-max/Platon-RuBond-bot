@@ -12,7 +12,7 @@ from bondbot.config import load_settings
 from bondbot.data.cbr import CACHE_KEY, KeyRateSnapshot
 from bondbot.data.smartlab import parse_screener
 from bondbot.db import Database
-from bondbot.models import utcnow
+from bondbot.models import Bond, utcnow
 from bondbot.importers.smartlab_portfolio import import_portfolio_file
 from bondbot.vk.handlers import (
     BotHandlers,
@@ -331,6 +331,34 @@ def test_smart_commands_reply(db: Database) -> None:
         )
     )
     assert "Позиция добавлена" in vk.sent[-1]["message"]
+    db.upsert_bonds(
+        [
+            Bond(
+                isin="BALT1",
+                name="БалтЛизП15",
+                ytm_pct=20.0,
+                duration_years=1.5,
+                rating="A+",
+                price_pct=99.0,
+                volume_mn_rub=50.0,
+            )
+        ]
+    )
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/issuer Балтийский лизинг",
+                    }
+                },
+            }
+        )
+    )
+    assert "обзор эмитента" in vk.sent[-1]["message"]
     asyncio.run(
         handlers.handle_update(
             {

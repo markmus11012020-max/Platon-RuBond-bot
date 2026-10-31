@@ -34,7 +34,7 @@
 
 ## VK-команды
 
-`/portfolio`, `/bond ISIN`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`,
+`/portfolio`, `/bond ISIN`, `/issuer НАЗВАНИЕ`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`,
 `/risk [ISIN]`, `/stress [б.п.]`, `/news [ISIN]`, `/new`, `/idea`, `/journal`,
 `/strategy`, `/relative [ISIN]`, `/calendar [дней]`, `/doctor`, `/whatsnew`,
 `/position add|remove|list`, `/ask вопрос`, `/clear`, `/keyboard`, `/status`, `/help`.

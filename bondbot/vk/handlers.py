@@ -21,6 +21,7 @@ from bondbot.services.ideas import (
     render_journal,
     save_ideas,
 )
+from bondbot.services.issuer import issuer_payload, render_issuer
 from bondbot.services.news import build_news_digest
 from bondbot.services.relative import build_relative_value
 from bondbot.services.review import build_portfolio_review, build_what_changed
@@ -47,6 +48,7 @@ HELP_TEXT = """Platon Bond Bot — аналитика облигаций РФ.
 /watch remove ISIN — убрать
 /watch — список наблюдения
 /bond ISIN — карточка бумаги
+/issuer НАЗВАНИЕ — обзор эмитента без ISIN
 /screen — подбор по текущему профилю
 /safe — стабильные бумаги ЦБ+5–10 п.п.
 /exit — ликвидность и план выхода
@@ -315,6 +317,8 @@ class BotHandlers:
             await self._alloc(peer_id)
         elif command == "/bond":
             await self._bond(peer_id, argument)
+        elif command == "/issuer":
+            await self._issuer(peer_id, argument)
         elif command == "/value":
             await self._value(peer_id, argument)
         elif command == "/risk":
@@ -394,6 +398,28 @@ class BotHandlers:
             await self._reply(peer_id, f"Не удалось получить данные по {isin}.")
             return
         await self._reply(peer_id, format_bond(bond))
+
+    async def _issuer(self, peer_id: int, argument: str) -> None:
+        name = argument.strip()
+        if not name:
+            await self._reply(peer_id, "Укажи название: /issuer Балтийский лизинг")
+            return
+        snapshot = None
+        try:
+            snapshot = await self._key_rate_snapshot()
+        except Exception as exc:
+            log.warning("key rate for issuer failed: %s", exc)
+        try:
+            payload = issuer_payload(
+                self.db,
+                name,
+                key_rate_pct=snapshot.value_pct if snapshot else None,
+            )
+        except Exception as exc:
+            log.warning("issuer overview failed: %s", exc)
+            await self._reply(peer_id, f"Не удалось собрать обзор эмитента: {exc}")
+            return
+        await self._reply(peer_id, render_issuer(payload))
 
     async def _value(self, peer_id: int, argument: str) -> None:
         isin = argument.strip().upper()

@@ -577,6 +577,51 @@ class Database:
             )
         return audits
 
+    def search_bonds_by_name(self, query: str, limit: int = 10) -> list[Bond]:
+        """Ищет выпуски по названию эмитента/бумаги без требования ISIN."""
+        stop = {
+            "что", "сейчас", "как", "дела", "по", "про", "у", "с", "а", "и",
+            "облигации", "облигация", "облигаций", "выпуск", "выпуски",
+            "эмитент", "эмитента", "компания", "компании", "бумага", "бумаги",
+        }
+        tokens = [
+            token
+            for token in re.split(r"[^0-9a-zа-яё]+", query.lower().replace("ё", "е"))
+            if len(token) >= 2 and token not in stop
+        ]
+        if not tokens:
+            return []
+        min_matches = len(tokens) if len(tokens) <= 2 else max(2, len(tokens) // 2)
+        ranked: list[tuple[int, Bond]] = []
+        for bond in self.list_bonds():
+            text = f"{bond.name} {bond.issuer or ''}".lower().replace("ё", "е")
+            compact = text.replace(" ", "")
+            score = 0
+            matched = 0
+            for token in tokens:
+                prefix4 = token[:4]
+                prefix3 = token[:3]
+                if token in text or token in compact:
+                    score += 4
+                    matched += 1
+                elif len(prefix4) >= 4 and (prefix4 in text or prefix4 in compact):
+                    score += 2
+                    matched += 1
+                elif len(prefix3) >= 3 and (prefix3 in text or prefix3 in compact):
+                    score += 1
+                    matched += 1
+            if matched >= min_matches and score >= 2:
+                ranked.append((score, bond))
+        ranked.sort(
+            key=lambda item: (
+                item[0],
+                item[1].ytm_pct or 0.0,
+                item[1].volume_mn_rub or 0.0,
+            ),
+            reverse=True,
+        )
+        return [bond for _, bond in ranked[: max(1, limit)]]
+
     def count_bonds(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) AS count FROM bonds").fetchone()
         return int(row["count"]) if row else 0
