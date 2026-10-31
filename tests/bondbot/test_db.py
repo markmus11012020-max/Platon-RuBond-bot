@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 
-from bondbot.db import Database
+from bondbot.db import SCHEMA_VERSION, Database
 from bondbot.models import Bond
 
 
@@ -30,5 +31,44 @@ def test_upsert_and_watchlist(tmp_path) -> None:
         assert len(rows) == 1
         assert rows[0]["isin"] == "RU000A10G1T5"
         assert rows[0]["name"] == "Test bond"
+    finally:
+        db.close()
+
+
+def test_schema_version_is_set(tmp_path) -> None:
+    db = Database(str(tmp_path / "version.db"))
+    try:
+        version = db.conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version == SCHEMA_VERSION
+    finally:
+        db.close()
+
+
+def test_legacy_positions_table_is_migrated(tmp_path) -> None:
+    path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE positions (
+            isin TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            qty REAL NOT NULL,
+            buy_price_pct REAL
+        );
+        PRAGMA user_version = 0;
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    db = Database(path)
+    try:
+        columns = {
+            row[1]
+            for row in db.conn.execute("PRAGMA table_info(positions)").fetchall()
+        }
+        assert "annual_coupon_rub" in columns
+        version = db.conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version == SCHEMA_VERSION
     finally:
         db.close()

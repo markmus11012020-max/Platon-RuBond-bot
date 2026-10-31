@@ -33,6 +33,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+1.txt
 
 # ============================================================
 # Databases & caches

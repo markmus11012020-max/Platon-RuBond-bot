@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+
+MSK = timezone(timedelta(hours=3), name="MSK")
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def now_msk() -> datetime:
+    return datetime.now(MSK)
+
+
+def to_msk(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(MSK)
 
 
 @dataclass(slots=True)

@@ -2,6 +2,15 @@
 
 > **Автономный ИИ-агент рынка облигаций РФ** — мониторинг Московской Биржи, семантический анализ новостей, расчёт доходности, Risk-Officer и уведомления в Telegram.
 
+## 🧭 Два продукта в одном репозитории
+
+| Продукт | Точка входа | Назначение |
+|---|---|---|
+| **Streamlit-агент** | `app.py`, `src/` | исследовательский UI: LangGraph, RAG, Risk-Officer, новости, портфель |
+| **VK-бот `bondbot`** | `bondbot/` | текущий production-фокус: детерминированная аналитика облигаций, приватный помощник в VK |
+
+Дальше в этом README описаны оба слоя. Краткая документация по VK-боту — в [`bondbot/README.md`](bondbot/README.md).
+
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![LangChain](https://img.shields.io/badge/LangChain-0.3%2B-green?logo=langchain&logoColor=white)](https://python.langchain.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-orange)](https://langchain-ai.github.io/langgraph/)
@@ -128,6 +137,25 @@ Platon-RuBond-bot/
 | **L** — Liskov Substitution | `MoexParser`, `NewsParser`, `MacroParser` взаимозаменяемы через интерфейс `BaseParser` |
 | **I** — Interface Segregation | `BaseParser` имеет только `fetch_data` + `parse_data` — минимальный контракт |
 | **D** — Dependency Inversion | `PlatonAgentFactory` зависит от абстракций (`BaseParser`, `ToolCache`), а не от конкретных реализаций |
+
+---
+
+## 🤖 VK-бот `bondbot`
+
+Детерминированное ядро без LLM в расчётах: данные smart-lab/MOEX, ставка ЦБ, скрининг, портфель, стратегии и аудит.
+
+```powershell
+.\.venv\Scripts\python -m bondbot.cli update --pages 3
+.\.venv\Scripts\python -m bondbot.cli rate
+.\.venv\Scripts\python -m bondbot.cli safe --limit 5
+.\.venv\Scripts\python -m bondbot.cli exit
+.\.venv\Scripts\python -m bondbot.cli alloc
+.\.venv\Scripts\python -m bondbot.cli audit
+```
+
+Команды VK: `/portfolio`, `/bond ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/status`, `/help`.
+
+Production-развёртывание — отдельный compose-project `bondbot`, контейнер `bondbot-app`, health на `127.0.0.1:8091`; существующий freelance-бот и Caddy не затрагиваются.
 
 ---
 
@@ -299,6 +327,10 @@ class CbondsParser(BaseParser):
 - [x] Observability (LocalTracer + LangSmith)
 - [x] Streamlit UI (light/dark, 4 вкладки)
 - [x] Portfolio persistence + метрики
+- [x] VK-бот: smart-lab, CBR key rate, скрининг, портфель, `/safe`, `/exit`, `/alloc`
+- [x] Аудит стратегических расчётов (`strategy_audit`)
+- [ ] Планировщик обновления данных и проактивные алерты
+- [ ] Новости, новые выпуски, LLM-ассистент `/ask`
 - [ ] Telegram-алерты (заглушка готова, нужен бот-токен)
 - [ ] Backtesting стратегий на исторических данных
 - [ ] Интеграция с Cbonds/БКС для расширенных данных

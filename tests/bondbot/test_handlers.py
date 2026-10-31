@@ -9,8 +9,10 @@ import pytest
 
 from bondbot.analytics.rates import MaxYield
 from bondbot.config import load_settings
+from bondbot.data.cbr import CACHE_KEY, KeyRateSnapshot
 from bondbot.data.smartlab import parse_screener
 from bondbot.db import Database
+from bondbot.models import utcnow
 from bondbot.importers.smartlab_portfolio import import_portfolio_file
 from bondbot.vk.handlers import (
     BotHandlers,
@@ -127,3 +129,87 @@ def test_connect_and_portfolio_command(db: Database) -> None:
         )
     )
     assert "Бумажный портфель" in vk.sent[-1]["message"]
+
+
+def _owner_handlers(db: Database) -> tuple[BotHandlers, FakeVk]:
+    settings = replace(
+        load_settings(),
+        vk_admin_user_id=ADMIN_ID,
+        vk_group_token="test",
+        vk_group_id=1,
+    )
+    vk = FakeVk()
+    return BotHandlers(settings, db, vk), vk  # type: ignore[arg-type]
+
+
+def test_private_start_stores_owner_peer(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": ADMIN_ID,
+                        "from_id": ADMIN_ID,
+                        "text": "/start",
+                    }
+                },
+            }
+        )
+    )
+    assert db.kv_get("owner_peer_id") == str(ADMIN_ID)
+    assert "аналитик" in vk.sent[-1]["message"].lower()
+
+
+def test_stranger_is_ignored(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID + 1,
+                        "text": "/portfolio",
+                    }
+                },
+            }
+        )
+    )
+    assert vk.sent == []
+
+
+def test_strategy_commands_reply(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    db.kv_set(
+        CACHE_KEY,
+        KeyRateSnapshot(
+            value_pct=14.0,
+            as_of=date(2026, 10, 30),
+            fetched_at=utcnow(),
+        ).to_json(),
+    )
+    expected = {
+        "/safe": "Стабильные бумаги",
+        "/exit": "Ликвидность и выход",
+        "/alloc": "Целевая аллокация",
+    }
+    for command, header in expected.items():
+        asyncio.run(
+            handlers.handle_update(
+                {
+                    "type": "message_new",
+                    "object": {
+                        "message": {
+                            "peer_id": CHAT_PEER,
+                            "from_id": ADMIN_ID,
+                            "text": command,
+                        }
+                    },
+                }
+            )
+        )
+        assert header in vk.sent[-1]["message"]
+    assert db.audits(limit=10)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
 from bondbot.analytics.portfolio import analyze_portfolio
@@ -9,7 +8,11 @@ from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.config import Settings
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
-from bondbot.models import Bond, ScreenFilters
+from bondbot.models import Bond, ScreenFilters, now_msk, to_msk
+from bondbot.strategy.allocation import build_allocation
+from bondbot.strategy.exit import build_exit_plan
+from bondbot.strategy.render import render_allocation, render_exit_plan, render_safe_list
+from bondbot.strategy.safe import build_safe_list
 from bondbot.vk.client import VkClient, VkApiError
 
 log = logging.getLogger(__name__)
@@ -22,6 +25,9 @@ HELP_TEXT = """Platon Bond Bot — аналитика облигаций РФ.
 /watch — список наблюдения
 /bond ISIN — карточка бумаги
 /screen — подбор по текущему профилю
+/safe — стабильные бумаги ЦБ+5–10 п.п.
+/exit — ликвидность и план выхода
+/alloc — целевая аллокация
 /status — состояние данных
 /connect — подключить беседу (админ)
 /help — эта справка
@@ -42,8 +48,8 @@ def _num(value: float | None, suffix: str = "", digits: int = 2) -> str:
 
 
 def _short(text: str, limit: int) -> str:
-    text = " ".join((text or "").split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def format_portfolio(settings: Settings, db: Database) -> str:
@@ -85,7 +91,7 @@ def format_portfolio(settings: Settings, db: Database) -> str:
         for warning in metrics.warnings[:8]:
             lines.append(f"• {_short(warning, 180)}")
     lines.append("")
-    lines.append(f"Данные: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+    lines.append(f"Данные: {now_msk().strftime('%d.%m.%Y %H:%M')}")
     return _short("\n".join(lines), 3900)
 
 
@@ -166,7 +172,7 @@ def format_status(
     bonds = db.list_bonds()
     positions = db.positions()
     coupons = sum(len(db.coupons(p.isin)) for p in positions)
-    last = max((b.fetched_at for b in bonds), default=None)
+    last = to_msk(max((b.fetched_at for b in bonds), default=None))
     cap = max_yield or MaxYield(value_pct=settings.max_yield_pct, source="fixed")
     return (
         f"Бумаг в базе: {len(bonds)}\n"
@@ -200,7 +206,13 @@ class BotHandlers:
         is_admin = bool(self.settings.vk_admin_user_id) and from_id == self.settings.vk_admin_user_id
         is_chat = VkClient.is_chat_peer(peer_id)
 
+        if not is_admin:
+            log.warning("ignored message from non-owner %s", from_id)
+            return
+
         if command == "/start":
+            if not is_chat:
+                self.db.kv_set("owner_peer_id", str(peer_id))
             if is_chat:
                 await self._reply(peer_id, HELP_TEXT)
             else:
@@ -212,6 +224,12 @@ class BotHandlers:
         elif command == "/screen":
             cap = await resolve_max_yield(self.settings, self.db)
             await self._reply(peer_id, format_screen(self.settings, self.db, max_yield=cap))
+        elif command in {"/safe", "/stable"}:
+            await self._safe(peer_id)
+        elif command == "/exit":
+            await self._exit(peer_id)
+        elif command == "/alloc":
+            await self._alloc(peer_id)
         elif command == "/bond":
             await self._bond(peer_id, argument)
         elif command == "/watch":
@@ -300,3 +318,53 @@ class BotHandlers:
             await self.vk.send_message(peer_id, _short(text, 3900))
         except VkApiError as exc:
             log.warning("reply to %s failed: %s", peer_id, exc)
+
+    async def _key_rate_snapshot(self):
+        from bondbot.data.cbr import KeyRateService
+
+        return await KeyRateService(self.settings, self.db).get()
+
+    async def _safe(self, peer_id: int) -> None:
+        try:
+            snapshot = await self._key_rate_snapshot()
+        except Exception as exc:
+            await self._reply(
+                peer_id,
+                "Не удалось получить ключевую ставку ЦБ — не посчитаю диапазон. "
+                f"Попробуй позже.\n{exc}",
+            )
+            return
+        try:
+            result = build_safe_list(self.settings, self.db, snapshot, limit=8)
+        except Exception as exc:
+            log.exception("safe list failed")
+            await self._reply(peer_id, f"Не удалось построить список стабильных бумаг: {exc}")
+            return
+        await self._reply(peer_id, render_safe_list(result))
+
+    async def _exit(self, peer_id: int) -> None:
+        try:
+            result = build_exit_plan(self.settings, self.db)
+        except Exception as exc:
+            log.exception("exit plan failed")
+            await self._reply(peer_id, f"Не удалось построить план выхода: {exc}")
+            return
+        await self._reply(peer_id, render_exit_plan(result))
+
+    async def _alloc(self, peer_id: int) -> None:
+        try:
+            snapshot = await self._key_rate_snapshot()
+        except Exception as exc:
+            await self._reply(
+                peer_id,
+                "Не удалось получить ключевую ставку ЦБ — не посчитаю аллокацию. "
+                f"Попробуй позже.\n{exc}",
+            )
+            return
+        try:
+            result = build_allocation(self.settings, self.db, snapshot)
+        except Exception as exc:
+            log.exception("allocation failed")
+            await self._reply(peer_id, f"Не удалось построить аллокацию: {exc}")
+            return
+        await self._reply(peer_id, render_allocation(result))

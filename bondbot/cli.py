@@ -4,14 +4,22 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import datetime
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.config import load_settings
+from bondbot.data.cbr import KeyRateService
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
-from bondbot.models import Bond, ScreenFilters
+from bondbot.models import Bond, ScreenFilters, now_msk
+from bondbot.strategy.allocation import build_allocation
+from bondbot.strategy.exit import build_exit_plan
+from bondbot.strategy.render import (
+    render_allocation,
+    render_exit_plan,
+    render_safe_list,
+)
+from bondbot.strategy.safe import build_safe_list
 
 log = logging.getLogger("bondbot")
 
@@ -103,7 +111,50 @@ async def cmd_screen(args: argparse.Namespace, db: Database) -> None:
             print(f"    позиция = {item.liquidity_share:.1%} дневного объёма")
 
 
+async def cmd_rate(args: argparse.Namespace, db: Database) -> None:
+    settings = load_settings()
+    snapshot = await KeyRateService(settings, db).get()
+    source = "кэш, ЦБ недоступен" if snapshot.stale else "свежая"
+    print(
+        f"Ставка ЦБ: {snapshot.value_pct:.2f}% на "
+        f"{snapshot.as_of:%d.%m.%Y} ({source})"
+    )
+
+
+async def cmd_safe(args: argparse.Namespace, db: Database) -> None:
+    settings = load_settings()
+    snapshot = await KeyRateService(settings, db).get()
+    result = build_safe_list(settings, db, snapshot, limit=args.limit)
+    print(render_safe_list(result))
+
+
+async def cmd_exit(args: argparse.Namespace, db: Database) -> None:
+    result = build_exit_plan(load_settings(), db)
+    print(render_exit_plan(result))
+
+
+async def cmd_alloc(args: argparse.Namespace, db: Database) -> None:
+    settings = load_settings()
+    snapshot = await KeyRateService(settings, db).get()
+    result = build_allocation(settings, db, snapshot)
+    print(render_allocation(result))
+
+
+async def cmd_audit(args: argparse.Namespace, db: Database) -> None:
+    audits = db.audits(limit=args.limit)
+    if not audits:
+        print("Аудит пуст")
+        return
+    for record in audits:
+        print(
+            f"{record['id']}\t{record['created_at']}\t{record['kind']}\t"
+            f"inputs={len(record['inputs'])}\tformulas={len(record['formulas'])}\t"
+            f"result={len(record['result'])}"
+        )
+
+
 async def cmd_watch(args: argparse.Namespace, db: Database) -> None:
+
     if args.action == "add":
         if db.get_bond(args.isin) is None:
             await cmd_bond(argparse.Namespace(isin=args.isin), db)
@@ -198,7 +249,7 @@ async def cmd_portfolio(args: argparse.Namespace, db: Database) -> None:
             print("Предупреждения:")
             for warning in metrics.warnings:
                 print(f"  - {warning}")
-        print(f"Данные портфеля: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+        print(f"Данные портфеля: {now_msk().strftime('%d.%m.%Y %H:%M')}")
         return
 
     rows = db.watchlist()
@@ -212,7 +263,7 @@ async def cmd_portfolio(args: argparse.Namespace, db: Database) -> None:
             f"{(row.get('rating') or '—'):>5} {_fmt(row.get('price_pct')):>7} "
             f"{_fmt(row.get('coupon_rub')):>7}  {(row.get('name') or 'нет данных')[:45]}"
         )
-    print(f"\nОбновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+    print(f"\nОбновлено: {now_msk().strftime('%d.%m.%Y %H:%M')}")
 
 
 async def async_main(args: argparse.Namespace) -> None:
@@ -224,6 +275,16 @@ async def async_main(args: argparse.Namespace) -> None:
             await cmd_bond(args, db)
         elif args.command == "screen":
             await cmd_screen(args, db)
+        elif args.command == "safe":
+            await cmd_safe(args, db)
+        elif args.command == "exit":
+            await cmd_exit(args, db)
+        elif args.command == "alloc":
+            await cmd_alloc(args, db)
+        elif args.command == "audit":
+            await cmd_audit(args, db)
+        elif args.command == "rate":
+            await cmd_rate(args, db)
         elif args.command == "watch":
             await cmd_watch(args, db)
         elif args.command == "portfolio":
@@ -261,6 +322,18 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("action", choices=["add", "remove", "list"])
     watch.add_argument("isin", nargs="?")
     watch.add_argument("note", nargs="?")
+
+    safe = sub.add_parser("safe", help="stable bonds inside ЦБ+5..10 п.п. band")
+    safe.add_argument("--limit", type=int, default=8)
+
+    sub.add_parser("exit", help="liquidity and exit plan per position")
+
+    sub.add_parser("alloc", help="target allocation and trades")
+
+    audit = sub.add_parser("audit", help="recent strategy audit records")
+    audit.add_argument("--limit", type=int, default=20)
+
+    sub.add_parser("rate", help="fetch and cache CBR key rate")
 
     sub.add_parser("portfolio", help="show watchlist with current metrics")
     import_portfolio = sub.add_parser("import-portfolio", help="import smart-lab portfolio HTML")

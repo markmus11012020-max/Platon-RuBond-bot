@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  bondbot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install bondbot dependencies
+        run: pip install -r bondbot/requirements.txt pytest
+      - name: Run bondbot tests
+        run: pytest tests/bondbot -q
+
+  legacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install legacy dependencies
+        run: pip install -r requirements.txt
+      - name: Run legacy tests
+        run: pytest tests/analytics tests/agent -q

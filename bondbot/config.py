@@ -59,6 +59,7 @@ class Settings:
     portfolio_size_rub: float = 5_000_000
     max_pct_daily_volume: float = 0.05
     min_issue_size_rub: float = 5_000_000_000
+    exit_horizon_days: int = 5
 
     # Default screening profile
     min_yield_pct: float = 14.0
@@ -108,6 +109,7 @@ def load_settings() -> Settings:
         portfolio_size_rub=_float("BONDBOT_PORTFOLIO_SIZE_RUB", 5_000_000),
         max_pct_daily_volume=_float("BONDBOT_MAX_PCT_DAILY_VOLUME", 0.05),
         min_issue_size_rub=_float("BONDBOT_MIN_ISSUE_SIZE_RUB", 5_000_000_000),
+        exit_horizon_days=_int("BONDBOT_EXIT_HORIZON_DAYS", 5),
         min_yield_pct=_float("BONDBOT_MIN_YIELD_PCT", 14.0),
         max_yield_pct=_float("BONDBOT_MAX_YIELD_PCT", 35.0),
         max_duration_years=_float("BONDBOT_MAX_DURATION_YEARS", 5.0),

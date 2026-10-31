@@ -10,6 +10,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from bondbot.config import Settings
+from bondbot.data.quality import sanitize_bond
 from bondbot.models import Bond, Coupon
 
 log = logging.getLogger(__name__)
@@ -299,7 +300,7 @@ class SmartLabClient:
         for page in range(1, max(1, pages) + 1):
             url = self.page_url(page)
             html = await self._fetch(url)
-            parsed = parse_screener(html, source_url=url)
+            parsed = [sanitize_bond(bond) for bond in parse_screener(html, source_url=url)]
             for bond in parsed:
                 if bond.isin not in seen:
                     seen.add(bond.isin)
@@ -311,4 +312,5 @@ class SmartLabClient:
 
     async def fetch_detail(self, isin: str) -> tuple[Bond | None, list[Coupon]]:
         html = await self._fetch(self.detail_url(isin))
-        return parse_detail(html, isin.upper())
+        bond, coupons = parse_detail(html, isin.upper())
+        return (sanitize_bond(bond) if bond is not None else None), coupons

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from bondbot.data.quality import sanitize_bond, sanitize_position
 from bondbot.models import Bond, Coupon, PortfolioPosition
+
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bonds (
@@ -72,6 +76,16 @@ CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS strategy_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    inputs_json TEXT NOT NULL,
+    formulas_json TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    version TEXT NOT NULL
+);
 """
 
 
@@ -88,6 +102,18 @@ def _parse_date(value: Any) -> date | None:
         return None
 
 
+def _parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def _row_to_bond(row: sqlite3.Row) -> Bond:
     data = dict(row)
     for key in ("next_coupon_date", "placement_date", "maturity_date", "offer_date"):
@@ -96,12 +122,9 @@ def _row_to_bond(row: sqlite3.Row) -> Bond:
         data["qual_only"] = bool(data["qual_only"])
     if data.get("amortized") is not None:
         data["amortized"] = bool(data["amortized"])
-    fetched = data.get("fetched_at")
-    if fetched:
-        try:
-            data["fetched_at"] = datetime.fromisoformat(fetched)
-        except ValueError:
-            pass
+    parsed_fetched = _parse_datetime(data.get("fetched_at"))
+    if parsed_fetched is not None:
+        data["fetched_at"] = parsed_fetched
     return Bond(**{key: value for key, value in data.items() if key in Bond.__dataclass_fields__})
 
 
@@ -118,12 +141,29 @@ class Database:
         self.conn.commit()
 
     def _migrate(self) -> None:
-        columns = {
-            row[1]
-            for row in self.conn.execute("PRAGMA table_info(positions)").fetchall()
-        }
-        if columns and "annual_coupon_rub" not in columns:
-            self.conn.execute("ALTER TABLE positions ADD COLUMN annual_coupon_rub REAL")
+        version = int(self.conn.execute("PRAGMA user_version").fetchone()[0])
+        if version > SCHEMA_VERSION:
+            raise RuntimeError(
+                f"БД новее кода: user_version={version}, ожидается {SCHEMA_VERSION}"
+            )
+
+        if version < 1:
+            columns = {
+                row[1]
+                for row in self.conn.execute("PRAGMA table_info(positions)").fetchall()
+            }
+            if columns and "annual_coupon_rub" not in columns:
+                self.conn.execute("ALTER TABLE positions ADD COLUMN annual_coupon_rub REAL")
+            version = 1
+
+        if version < 2:
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_strategy_audit_kind "
+                "ON strategy_audit(kind, id)"
+            )
+            version = 2
+
+        self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def close(self) -> None:
         self.conn.close()
@@ -170,7 +210,7 @@ class Database:
             fetched_at = excluded.fetched_at
         """
         rows = []
-        for bond in bonds:
+        for bond in (sanitize_bond(item) for item in bonds):
             rows.append(
                 {
                     "isin": bond.isin,
@@ -290,7 +330,7 @@ class Database:
         """
         rows = []
         now = datetime.now(timezone.utc).isoformat()
-        for position in positions:
+        for position in (sanitize_position(item) for item in positions):
             rows.append(
                 {
                     "isin": position.isin,
@@ -370,3 +410,50 @@ class Database:
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, value),
             )
+
+    def save_audit(
+        self,
+        kind: str,
+        inputs: dict[str, Any],
+        formulas: tuple[str, ...] | list[str],
+        result: dict[str, Any],
+        version: str = "strategy-1.0",
+        created_at: datetime | None = None,
+    ) -> int:
+        payload = (created_at or datetime.now(timezone.utc)).isoformat()
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO strategy_audit "
+                "(created_at, kind, inputs_json, formulas_json, result_json, version) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    payload,
+                    kind,
+                    json.dumps(inputs, ensure_ascii=False, default=str),
+                    json.dumps(list(formulas), ensure_ascii=False, default=str),
+                    json.dumps(result, ensure_ascii=False, default=str),
+                    version,
+                ),
+            )
+        return int(cursor.lastrowid or 0)
+
+    def audits(self, limit: int = 20) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT id, created_at, kind, inputs_json, formulas_json, result_json, version "
+            "FROM strategy_audit ORDER BY id DESC LIMIT ?",
+            (max(1, limit),),
+        ).fetchall()
+        audits: list[dict[str, Any]] = []
+        for row in rows:
+            audits.append(
+                {
+                    "id": int(row["id"]),
+                    "created_at": row["created_at"],
+                    "kind": row["kind"],
+                    "inputs": json.loads(row["inputs_json"]),
+                    "formulas": json.loads(row["formulas_json"]),
+                    "result": json.loads(row["result_json"]),
+                    "version": row["version"],
+                }
+            )
+        return audits
