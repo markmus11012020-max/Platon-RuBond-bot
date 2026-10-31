@@ -295,11 +295,27 @@ def format_screen(
         f"Данные: рейтинг {rated}/{total} · тип купона {typed}/{total} · "
         f"частота {with_freq}/{total}"
     )
+    if filters.min_yield_pct is None and filters.max_yield_pct is not None:
+        yield_text = f"доходность ≤ {filters.max_yield_pct:g}%"
+    elif filters.max_yield_pct is None and filters.min_yield_pct is not None:
+        yield_text = f"доходность ≥ {filters.min_yield_pct:g}%"
+    else:
+        yield_text = (
+            f"доходность {filters.min_yield_pct if filters.min_yield_pct is not None else '—'}–"
+            f"{filters.max_yield_pct if filters.max_yield_pct is not None else '—'}%"
+        )
+    if filters.min_duration_years is None and filters.max_duration_years is not None:
+        duration_text = f"дюрация ≤ {filters.max_duration_years:g} лет"
+    elif filters.max_duration_years is None and filters.min_duration_years is not None:
+        duration_text = f"дюрация ≥ {filters.min_duration_years:g} лет"
+    else:
+        duration_text = (
+            f"дюрация {filters.min_duration_years if filters.min_duration_years is not None else '—'}–"
+            f"{filters.max_duration_years if filters.max_duration_years is not None else '—'} лет"
+        )
     filters_text = [
-        f"доходность {filters.min_yield_pct if filters.min_yield_pct is not None else '—'}–"
-        f"{filters.max_yield_pct if filters.max_yield_pct is not None else '—'}%",
-        f"дюрация {filters.min_duration_years if filters.min_duration_years is not None else '—'}–"
-        f"{filters.max_duration_years if filters.max_duration_years is not None else '—'} лет",
+        yield_text,
+        duration_text,
         f"рейтинг ≥ {filters.min_rating or '—'}",
         f"купон {coupon_text} · выплат в год: {freq_text}",
     ]

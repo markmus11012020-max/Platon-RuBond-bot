@@ -41,6 +41,7 @@
 
 `/portfolio`, `/bond ISIN`, `/issuer НАЗВАНИЕ`, `/value ISIN`, `/watch`, `/screen [постоянный|плавающий] [2 4 12]`, `/safe`, `/exit`, `/alloc`,
 `/risk [ISIN]`, `/stress [б.п.]`, `/news [ISIN]`, `/new`, `/idea`, `/journal`,
+`/preset консервативный|сбалансированный|максимальная доходность`,
 `/strategy`, `/relative [ISIN]`, `/calendar [дней]`, `/doctor`, `/whatsnew`,
 `/position add|remove|list`, `/ask вопрос`, `/tax [купон]`, `/iis`, `/clear`, `/keyboard`, `/status`, `/help`.
 
