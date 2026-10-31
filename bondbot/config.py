@@ -103,6 +103,7 @@ class Settings:
     llm_max_tool_rounds: int = 4
     llm_max_tokens: int = 1800
     llm_timeout: int = 45
+    llm_daily_token_limit: int = 500_000
 
     # Default screening profile
     min_yield_pct: float = 14.0
@@ -117,6 +118,9 @@ class Settings:
     vk_group_id: int = 0
     vk_api_version: str = "5.199"
     vk_admin_user_id: int = 0
+    public_access: bool = True
+    community_members_only: bool = True
+    dialogue_ttl_minutes: int = 120
 
     # LLM
     openai_base_url: str = "https://api.aitunnel.ru/v1"
@@ -183,6 +187,7 @@ def load_settings() -> Settings:
         llm_max_tool_rounds=_int("BONDBOT_LLM_MAX_TOOL_ROUNDS", 4),
         llm_max_tokens=_int("BONDBOT_LLM_MAX_TOKENS", 1800),
         llm_timeout=_int("BONDBOT_LLM_TIMEOUT", 45),
+        llm_daily_token_limit=_int("BONDBOT_LLM_DAILY_TOKEN_LIMIT", 500_000),
         min_yield_pct=_float("BONDBOT_MIN_YIELD_PCT", 14.0),
         max_yield_pct=_float("BONDBOT_MAX_YIELD_PCT", 35.0),
         max_duration_years=_float("BONDBOT_MAX_DURATION_YEARS", 5.0),
@@ -193,6 +198,9 @@ def load_settings() -> Settings:
         vk_group_id=_int("BONDBOT_VK_GROUP_ID", 0),
         vk_api_version=_env("BONDBOT_VK_API_VERSION", "5.199") or "5.199",
         vk_admin_user_id=_int("BONDBOT_VK_ADMIN_USER_ID", 0),
+        public_access=_bool("BONDBOT_PUBLIC_ACCESS", True),
+        community_members_only=_bool("BONDBOT_COMMUNITY_MEMBERS_ONLY", True),
+        dialogue_ttl_minutes=_int("BONDBOT_DIALOGUE_TTL_MINUTES", 120),
         openai_base_url=(
             _env("BONDBOT_OPENAI_BASE_URL")
             or _env("OPENAI_BASE_URL")

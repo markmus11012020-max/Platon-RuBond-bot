@@ -10,7 +10,10 @@
 - SQLite: бумаги, купоны, watchlist, позиции, аудит стратегий;
 - фильтр по доходности, дюрации, рейтингу, цене, объёму и ликвидности;
 - расчёт допустимого объёма позиции относительно дневного оборота;
-- фильтры по типу купона (постоянный/плавающий/структурный) и частоте выплат 2/4/12 в год;
+- фильтры по типу купона (постоянный/плавающий/структурный), частоте выплат 2/4/12 в год,
+  датам погашения/оферты и полная сортировка по всем полям;
+- публичный режим для участников сообщества, без личных профилей и портфелей;
+- справочные `/tax` и `/iis`, лимит LLM-токенов на пользователя в день;
 - стратегии: `/safe` (коридор ЦБ +5…10 п.п.), `/exit` (ликвидность и выход), `/alloc` (целевая аллокация);
 - скоринг стабильности, YTM после налога, модифицированная дюрация, G/Z-спред, carry;
 - риск-скор, стресс-тест по ставке, новые выпуски, журнал идей и стратегия недели;
@@ -39,9 +42,15 @@
 `/portfolio`, `/bond ISIN`, `/issuer НАЗВАНИЕ`, `/value ISIN`, `/watch`, `/screen [постоянный|плавающий] [2 4 12]`, `/safe`, `/exit`, `/alloc`,
 `/risk [ISIN]`, `/stress [б.п.]`, `/news [ISIN]`, `/new`, `/idea`, `/journal`,
 `/strategy`, `/relative [ISIN]`, `/calendar [дней]`, `/doctor`, `/whatsnew`,
-`/position add|remove|list`, `/ask вопрос`, `/clear`, `/keyboard`, `/status`, `/help`.
+`/position add|remove|list`, `/ask вопрос`, `/tax [купон]`, `/iis`, `/clear`, `/keyboard`, `/status`, `/help`.
 
-Можно не писать `/ask`: любой обычный текст уходит в диалог с ИИ. Бот помнит последние сообщения (сброс — `/clear`).
+Публичные команды доступны участникам сообщества. `/portfolio`, `/position`, `/watch`,
+`/exit`, `/alloc`, `/stress`, `/strategy`, `/calendar`, `/doctor`, `/whatsnew`, `/journal`
+и `/connect` — только администратору.
+
+Можно не писать `/ask`: любой обычный текст уходит в диалог с ИИ. Бот помнит последние сообщения
+в течение `BONDBOT_DIALOGUE_TTL_MINUTES` (по умолчанию 120 минут), сброс — `/clear`.
+Персональные профили и портфели пользователей не сохраняются.
 
 Бот приватный: команды принимаются только от владельца (`BONDBOT_VK_ADMIN_USER_ID`).
 
@@ -71,6 +80,8 @@
 
 - `BONDBOT_DB_PATH`
 - `BONDBOT_VK_GROUP_TOKEN`, `BONDBOT_VK_GROUP_ID`, `BONDBOT_VK_ADMIN_USER_ID`
+- `BONDBOT_PUBLIC_ACCESS`, `BONDBOT_COMMUNITY_MEMBERS_ONLY`, `BONDBOT_DIALOGUE_TTL_MINUTES`
+- `BONDBOT_LLM_DAILY_TOKEN_LIMIT` (по умолчанию 500 000 токенов на пользователя в день)
 - `BONDBOT_MIN_YIELD_PCT`, `BONDBOT_MAX_YIELD_PCT` (fallback), `BONDBOT_MAX_DURATION_YEARS`, `BONDBOT_MIN_RATING`
 - `BONDBOT_DYNAMIC_MAX_YIELD`, `BONDBOT_KEY_RATE_MARGIN_PCT`, `BONDBOT_KEY_RATE_TTL_HOURS`, `BONDBOT_KEY_RATE_TIMEOUT`, `BONDBOT_KEY_RATE_URL`
 - `BONDBOT_POSITION_SIZE_RUB`, `BONDBOT_MAX_PCT_DAILY_VOLUME`, `BONDBOT_EXIT_HORIZON_DAYS`

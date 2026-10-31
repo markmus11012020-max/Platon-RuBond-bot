@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from bondbot.models import Bond, ScreenFilters
 
@@ -101,6 +102,41 @@ class ScreenResult:
     liquidity_share: float | None
 
 
+def _complete_data(bond: Bond) -> bool:
+    return all(
+        value is not None
+        for value in (
+            bond.ytm_pct,
+            bond.duration_years,
+            bond.rating,
+            bond.price_pct,
+            bond.volume_mn_rub,
+            bond.coupon_type,
+            bond.coupon_freq,
+            bond.maturity_date,
+        )
+    )
+
+
+def _sort_value(item: ScreenResult, sort_by: str) -> Any:
+    bond = item.bond
+    values = {
+        "yield": bond.ytm_pct,
+        "duration": bond.duration_years,
+        "maturity": bond.maturity_date,
+        "offer": bond.offer_date,
+        "coupon_freq": bond.coupon_freq,
+        "coupon_type": coupon_type_label(bond.coupon_type),
+        "rating": rating_rank(bond.rating),
+        "price": bond.price_pct,
+        "volume": bond.volume_mn_rub,
+        "issue_size": bond.issue_size_rub,
+        "updated": bond.fetched_at,
+        "score": item.score,
+    }
+    return values.get(sort_by, item.score)
+
+
 def screen_bonds(
     bonds: list[Bond],
     filters: ScreenFilters,
@@ -115,8 +151,22 @@ def screen_bonds(
             continue
         if filters.max_yield_pct is not None and bond.ytm_pct > filters.max_yield_pct:
             continue
+        if filters.min_duration_years is not None and bond.duration_years < filters.min_duration_years:
+            continue
         if filters.max_duration_years is not None and bond.duration_years > filters.max_duration_years:
             continue
+        if filters.maturity_from is not None:
+            if bond.maturity_date is None or bond.maturity_date < filters.maturity_from:
+                continue
+        if filters.maturity_to is not None:
+            if bond.maturity_date is None or bond.maturity_date > filters.maturity_to:
+                continue
+        if filters.offer_from is not None:
+            if bond.offer_date is None or bond.offer_date < filters.offer_from:
+                continue
+        if filters.offer_to is not None:
+            if bond.offer_date is None or bond.offer_date > filters.offer_to:
+                continue
         if not coupon_type_matches(bond.coupon_type, filters.coupon_type):
             continue
         if filters.coupon_freqs:
@@ -135,6 +185,17 @@ def screen_bonds(
                 continue
         if filters.exclude_qual_only and bond.qual_only:
             continue
+        if filters.exclude_amortized and bond.amortized:
+            continue
+        if filters.only_complete_data and not _complete_data(bond):
+            continue
+        if filters.issuer:
+            needle = filters.issuer.lower()
+            if needle not in f"{bond.name} {bond.issuer or ''}".lower():
+                continue
+        if filters.min_issue_size_rub is not None:
+            if bond.issue_size_rub is None or bond.issue_size_rub < filters.min_issue_size_rub:
+                continue
 
         min_volume = filters.min_volume_mn_rub
         if min_volume is None:
@@ -151,5 +212,15 @@ def screen_bonds(
         score = bond.ytm_pct + rating_bonus + liquidity_bonus
         results.append(ScreenResult(bond=bond, score=round(score, 4), liquidity_share=share))
 
-    results.sort(key=lambda item: (item.score, item.bond.volume_mn_rub or 0), reverse=True)
-    return results
+    present = [item for item in results if _sort_value(item, filters.sort_by) is not None]
+    missing = [item for item in results if _sort_value(item, filters.sort_by) is None]
+    present.sort(
+        key=lambda item: _sort_value(item, filters.sort_by),
+        reverse=filters.sort_order.lower() == "desc",
+    )
+    missing.sort(key=lambda item: item.score, reverse=True)
+    ordered = present + missing
+    offset = max(0, filters.offset)
+    if filters.limit is not None:
+        return ordered[offset : offset + max(1, filters.limit)]
+    return ordered[offset:]

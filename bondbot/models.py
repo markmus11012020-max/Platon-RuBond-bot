@@ -105,12 +105,25 @@ class PortfolioPosition:
 class ScreenFilters:
     min_yield_pct: float | None = None
     max_yield_pct: float | None = None
+    min_duration_years: float | None = None
     max_duration_years: float | None = None
+    maturity_from: date | None = None
+    maturity_to: date | None = None
+    offer_from: date | None = None
+    offer_to: date | None = None
     min_rating: str | None = None
     min_volume_mn_rub: float | None = None
+    min_issue_size_rub: float | None = None
     min_price_pct: float | None = None
     max_price_pct: float | None = None
     coupon_type: str | None = None
     coupon_freqs: tuple[float, ...] | None = None
     exclude_qual_only: bool = True
+    exclude_amortized: bool = False
+    only_complete_data: bool = False
+    issuer: str | None = None
+    sort_by: str = "score"
+    sort_order: str = "desc"
+    limit: int | None = None
+    offset: int = 0
     position_size_rub: float | None = None

@@ -3,20 +3,23 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import date, datetime
 
 from bondbot.analytics.bonds import (
-    COUPON_TYPE_ALIASES,
     coupon_type_label,
     required_daily_volume_mn,
     screen_bonds,
 )
 from bondbot.analytics.portfolio import analyze_portfolio
+from bondbot.analytics.presets import PRESET_LABELS, preset_filters, preset_name
+from bondbot.analytics.query import parse_screen_query
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.analytics.risk import assess_bond_risk, assess_portfolio_risk, stress_portfolio
 from bondbot.config import Settings
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
+from bondbot.knowledge import format_topic
 from bondbot.models import Bond, PortfolioPosition, ScreenFilters, now_msk, to_msk
 from bondbot.services.assistant import Assistant
 from bondbot.services.ideas import (
@@ -52,39 +55,55 @@ log = logging.getLogger(__name__)
 
 HELP_TEXT = """Platon Bond Bot — аналитика облигаций РФ.
 
-/portfolio — бумажный портфель и риски
-/watch add ISIN — добавить бумагу в наблюдение
-/watch remove ISIN — убрать
-/watch — список наблюдения
+/screen — подбор бумаг с фильтрами и сортировкой
+/preset — готовые профили: консервативный, сбалансированный, доходность
 /bond ISIN — карточка бумаги
 /issuer НАЗВАНИЕ — обзор эмитента без ISIN
-/screen [постоянный|плавающий] [2 4 12] — подбор с фильтром купона
-/safe — стабильные бумаги ЦБ+5–10 п.п.
-/exit — ликвидность и план выхода
-/alloc — целевая аллокация
 /value ISIN — доходность после налога, спреды, дюрация
-/risk [ISIN] — риск бумаги или портфеля
-/stress [б.п.] — стресс-тест по ставке
-/news [ISIN] — новости по портфелю или бумаге
+/risk ISIN — риск бумаги
+/relative [ISIN] — сравнение доходности с peers
+/safe — стабильные бумаги ЦБ+5–10 п.п.
+/news [ISIN] — новости
 /new — новые выпуски
 /idea — идеи в коридоре
-/journal — журнал идей
-/strategy — стратегия на неделю
-/relative [ISIN] — сравнение доходности с peers
-/calendar [дней] — оферты, погашения, купоны
-/doctor — здоровье портфеля
-/whatsnew — что изменилось
-/position add ISIN кол-во цена | remove ISIN | list
+/tax [купон] — НДФЛ: справочная информация
+/iis — ИИС-3: справочная информация
 /ask вопрос — ИИ-аналитик (или просто напиши вопрос текстом)
 /clear — очистить историю диалога
 /keyboard — показать кнопки
 /status — состояние данных
-/connect — подключить беседу (админ)
 /help — эта справка
 
 Данные: smart-lab.ru и MOEX ISS. Это аналитика, не индивидуальная инвестиционная рекомендация."""
 
+ADMIN_HELP_TEXT = HELP_TEXT + """
+
+Админ-команды:
+/portfolio, /position, /watch, /exit, /alloc, /stress, /strategy, /calendar,
+/doctor, /whatsnew, /journal, /connect"""
+
 MAIN_KEYBOARD = {
+    "one_time": False,
+    "buttons": [
+        [
+            {"action": {"type": "text", "label": "/screen"}},
+            {"action": {"type": "text", "label": "/safe"}},
+            {"action": {"type": "text", "label": "/idea"}},
+        ],
+        [
+            {"action": {"type": "text", "label": "/issuer"}},
+            {"action": {"type": "text", "label": "/news"}},
+            {"action": {"type": "text", "label": "/relative"}},
+        ],
+        [
+            {"action": {"type": "text", "label": "/tax"}},
+            {"action": {"type": "text", "label": "/iis"}},
+            {"action": {"type": "text", "label": "/help"}},
+        ],
+    ],
+}
+
+ADMIN_KEYBOARD = {
     "one_time": False,
     "buttons": [
         [
@@ -103,6 +122,21 @@ MAIN_KEYBOARD = {
             {"action": {"type": "text", "label": "/help"}},
         ],
     ],
+}
+
+ADMIN_ONLY = {
+    "/portfolio",
+    "/position",
+    "/watch",
+    "/exit",
+    "/alloc",
+    "/stress",
+    "/strategy",
+    "/calendar",
+    "/doctor",
+    "/whatsnew",
+    "/journal",
+    "/connect",
 }
 
 
@@ -241,46 +275,93 @@ def format_screen(
         filters.position_size_rub or settings.position_size_rub,
         settings.max_pct_daily_volume,
     )
-    results = screen_bonds(db.list_bonds(), filters, required_volume_mn=required)
+    bonds = db.list_bonds()
+    results = screen_bonds(bonds, filters, required_volume_mn=required)
     coupon_text = coupon_type_label(filters.coupon_type) if filters.coupon_type else "любой"
     freq_text = (
         ", ".join(f"{freq:g}" for freq in filters.coupon_freqs)
         if filters.coupon_freqs
         else "любая"
     )
+    sort_text = f"{filters.sort_by} {filters.sort_order}"
+    page_size = filters.limit or limit
+    offset = max(0, filters.offset)
+    total = len(bonds)
+    rated = sum(1 for bond in bonds if bond.rating)
+    typed = sum(1 for bond in bonds if bond.coupon_type)
+    with_freq = sum(1 for bond in bonds if bond.coupon_freq is not None)
+    coverage = (
+        f"Данные: рейтинг {rated}/{total} · тип купона {typed}/{total} · "
+        f"частота {with_freq}/{total}"
+    )
+    filters_text = [
+        f"доходность {filters.min_yield_pct if filters.min_yield_pct is not None else '—'}–"
+        f"{filters.max_yield_pct if filters.max_yield_pct is not None else '—'}%",
+        f"дюрация {filters.min_duration_years if filters.min_duration_years is not None else '—'}–"
+        f"{filters.max_duration_years if filters.max_duration_years is not None else '—'} лет",
+        f"рейтинг ≥ {filters.min_rating or '—'}",
+        f"купон {coupon_text} · выплат в год: {freq_text}",
+    ]
+    if filters.maturity_from or filters.maturity_to:
+        filters_text.append(
+            f"погашение {filters.maturity_from or '—'}…{filters.maturity_to or '—'}"
+        )
+    if filters.offer_from or filters.offer_to:
+        filters_text.append(
+            f"оферта {filters.offer_from or '—'}…{filters.offer_to or '—'}"
+        )
+    if filters.issuer:
+        filters_text.append(f"эмитент: {filters.issuer}")
+    if filters.only_complete_data:
+        filters_text.append("только полные данные")
     if not results:
         return (
-            f"Под текущий профиль ничего не найдено.\n"
-            f"Купон: {coupon_text} · выплат в год: {freq_text}\n"
-            f"Лимит доходности: {cap.describe()}\n"
-            f"Обнови данные на сервере."
+            "Под текущий профиль ничего не найдено.\n"
+            + " · ".join(filters_text)
+            + f"\n{coverage}\nЛимит доходности: {cap.describe()}\n"
+            + "Обнови данные или ослабь фильтры."
         )
     lines = [
-        f"🔎 Кандидаты: доходность {filters.min_yield_pct}–{cap.value_pct:.2f}%, "
-        f"дюрация ≤ {filters.max_duration_years} лет, рейтинг ≥ {filters.min_rating}",
-        f"Купон: {coupon_text} · выплат в год: {freq_text}",
+        "🔎 Кандидаты: " + " · ".join(filters_text),
+        f"Сортировка: {sort_text} · показано {offset + 1}–{offset + len(results[:page_size])}",
         f"Лимит: {cap.describe()}",
         f"Позиция {_money(filters.position_size_rub or settings.position_size_rub)} ≤ "
         f"{settings.max_pct_daily_volume:.0%} дневного объёма (≥ {required:.0f} млн ₽)",
+        coverage,
         "",
     ]
-    for item in results[:limit]:
+    for item in results[:page_size]:
         bond = item.bond
+        missing = [
+            label
+            for label, value in (
+                ("рейтинг", bond.rating),
+                ("тип", bond.coupon_type),
+                ("частота", bond.coupon_freq),
+            )
+            if value is None
+        ]
+        data_note = f" · нет: {', '.join(missing)}" if missing else ""
         lines.append(
-            f"• {bond.name} ({bond.isin})\n"
+            f"• {bond.name} ({bond.isin}) · score {item.score:.1f}\n"
             f"  YTM {_num(bond.ytm_pct, '%')} · дюр. {_num(bond.duration_years)} · "
-            f"{bond.rating or '—'} · оборот {_num(bond.volume_mn_rub, ' млн ₽')} · "
-            f"купон {coupon_type_label(bond.coupon_type)} {_num(bond.coupon_freq, '/год', 0)}"
+            f"погашение {bond.maturity_date or '—'} · оферта {bond.offer_date or '—'}\n"
+            f"  купон {coupon_type_label(bond.coupon_type)} "
+            f"{_num(bond.coupon_freq, '/год', 0)} · {bond.rating or '—'} · "
+            f"цена {_num(bond.price_pct, '%')} · оборот {_num(bond.volume_mn_rub, ' млн ₽')}"
+            f"{data_note}"
         )
     lines.append("")
     lines.append("Не рекомендация к покупке. Проверяй оферту, амортизацию и кредитные новости.")
-    return _short("\n".join(lines), 3900)
+    return "\n".join(lines)
 
 
 def format_status(
     settings: Settings,
     db: Database,
     max_yield: MaxYield | None = None,
+    *,
+    public: bool = False,
 ) -> str:
     bonds = db.list_bonds()
     positions = db.positions()
@@ -296,18 +377,23 @@ def format_status(
             return to_msk(datetime.fromisoformat(raw)).strftime("%d.%m.%Y %H:%M")
         except ValueError:
             return raw
-    return (
-        f"Бумаг в базе: {len(bonds)}\n"
-        f"Позиций: {len(positions)}\n"
-        f"Купонов в календаре: {coupons}\n"
-        f"Новостей: {db.news_count()} · идей: {len(db.ideas(limit=100))}\n"
-        f"Последнее обновление карточек: {last.strftime('%d.%m.%Y %H:%M') if last else '—'}\n"
-        f"Рынок обновлён: {stamp(market_raw)}\n"
-        f"Новости обновлены: {stamp(news_raw)}\n"
-        f"Лимит доходности: {cap.describe()}\n"
-        f"LLM: {'on' if settings.llm_configured else 'off'} ({settings.openai_model})\n"
-        f"VK: {'configured' if settings.vk_configured else 'not configured'}"
-    )
+    lines = [
+        f"Бумаг в базе: {len(bonds)}",
+        f"Новостей: {db.news_count()}",
+        f"Последнее обновление карточек: {last.strftime('%d.%m.%Y %H:%M') if last else '—'}",
+        f"Рынок обновлён: {stamp(market_raw)}",
+        f"Новости обновлены: {stamp(news_raw)}",
+        f"Лимит доходности: {cap.describe()}",
+    ]
+    if not public:
+        lines[1:1] = [
+            f"Позиций: {len(positions)}",
+            f"Купонов в календаре: {coupons}",
+            f"Идей: {len(db.ideas(limit=100))}",
+        ]
+        lines.append(f"LLM: {'on' if settings.llm_configured else 'off'} ({settings.openai_model})")
+        lines.append(f"VK: {'configured' if settings.vk_configured else 'not configured'}")
+    return "\n".join(lines)
 
 
 class BotHandlers:
@@ -315,6 +401,24 @@ class BotHandlers:
         self.settings = settings
         self.db = db
         self.vk = vk
+        self._member_cache: dict[int, tuple[float, bool]] = {}
+
+    async def _is_member(self, user_id: int) -> bool:
+        if not self.settings.community_members_only:
+            return True
+        if not self.settings.vk_group_id:
+            return False
+        cached = self._member_cache.get(user_id)
+        if cached and time.monotonic() - cached[0] < 3600:
+            return cached[1]
+        try:
+            member = await self.vk.is_group_member(user_id, self.settings.vk_group_id)
+        except Exception as exc:
+            log.warning("community membership check failed for %s: %s", user_id, exc)
+            # Не блокируем весь бот при сбое VK API; кэш всё равно ограничит злоупотребления.
+            return cached[1] if cached else True
+        self._member_cache[user_id] = (time.monotonic(), bool(member))
+        return bool(member)
 
     async def handle_update(self, update: dict) -> None:
         if update.get("type") != "message_new":
@@ -328,30 +432,47 @@ class BotHandlers:
 
         is_admin = bool(self.settings.vk_admin_user_id) and from_id == self.settings.vk_admin_user_id
         if not is_admin:
-            log.warning("ignored message from non-owner %s", from_id)
-            return
+            if not self.settings.public_access:
+                log.warning("public access disabled, ignored %s", from_id)
+                return
+            if not await self._is_member(from_id):
+                link = f"https://vk.com/club{self.settings.vk_group_id}"
+                await self._reply(
+                    peer_id,
+                    "Бот доступен участникам сообщества.\n"
+                    f"Вступить: {link}",
+                )
+                return
 
         # VK добавляет mention сообщества к кнопкам в беседе:
         # "[club123|@club123] /help" или "@club123 /help".
         match = re.search(r"(?<!\S)/[A-Za-zА-Яа-я0-9_]+", text)
         if match is None:
             # Любой обычный текст — это диалог с ИИ, а не команда.
-            await self._ask(peer_id, text)
+            await self._ask(peer_id, text, user_id=from_id, public=not is_admin)
             return
         command = match.group(0).lower().split("@")[0]
         argument = text[match.end():].strip()
         is_chat = VkClient.is_chat_peer(peer_id)
+        if command in ADMIN_ONLY and not is_admin:
+            await self._reply(peer_id, "Команда доступна администратору сообщества.")
+            return
+        if command == "/risk" and not is_admin and not argument.strip():
+            await self._reply(peer_id, "Укажи ISIN: /risk RU000A10G1T5")
+            return
+        help_text = ADMIN_HELP_TEXT if is_admin else HELP_TEXT
+        keyboard = ADMIN_KEYBOARD if is_admin else MAIN_KEYBOARD
 
         if command == "/start":
-            if not is_chat:
+            if is_admin and not is_chat:
                 self.db.kv_set("owner_peer_id", str(peer_id))
             if is_chat:
-                await self._reply(peer_id, HELP_TEXT, keyboard=MAIN_KEYBOARD)
+                await self._reply(peer_id, help_text, keyboard=keyboard)
             else:
                 await self._reply(
                     peer_id,
-                    "Привет. Я аналитик по облигациям.\n\n" + HELP_TEXT,
-                    keyboard=MAIN_KEYBOARD,
+                    "Привет. Я аналитик по облигациям.\n\n" + help_text,
+                    keyboard=keyboard,
                 )
         elif command == "/connect":
             await self._connect(peer_id, is_admin, is_chat)
@@ -359,6 +480,8 @@ class BotHandlers:
             await self._reply(peer_id, format_portfolio(self.settings, self.db))
         elif command == "/screen":
             await self._screen(peer_id, argument)
+        elif command == "/preset":
+            await self._preset(peer_id, argument)
         elif command in {"/safe", "/stable"}:
             await self._safe(peer_id)
         elif command == "/exit":
@@ -380,7 +503,7 @@ class BotHandlers:
         elif command == "/new":
             await self._new_issues(peer_id)
         elif command == "/idea":
-            await self._ideas(peer_id)
+            await self._ideas(peer_id, public=not is_admin)
         elif command == "/journal":
             await self._reply(peer_id, render_journal(self.db))
         elif command == "/strategy":
@@ -394,20 +517,32 @@ class BotHandlers:
         elif command == "/whatsnew":
             await self._reply(peer_id, build_what_changed(self.settings, self.db))
         elif command in {"/keyboard", "/buttons"}:
-            await self._reply(peer_id, "Кнопки включены. /help — команды.", keyboard=MAIN_KEYBOARD)
+            await self._reply(peer_id, "Кнопки включены. /help — команды.", keyboard=keyboard)
         elif command == "/position":
             await self._position(peer_id, argument)
         elif command == "/ask":
-            await self._ask(peer_id, argument)
+            await self._ask(peer_id, argument, user_id=from_id, public=not is_admin)
         elif command in {"/clear", "/reset"}:
             await self._clear_dialog(peer_id)
         elif command == "/watch":
             await self._watch(peer_id, from_id, is_admin, argument)
+        elif command == "/tax":
+            await self._reply(peer_id, format_topic(argument or "ндфл"))
+        elif command == "/iis":
+            await self._reply(peer_id, format_topic("iis3"))
         elif command == "/status":
             cap = await resolve_max_yield(self.settings, self.db)
-            await self._reply(peer_id, format_status(self.settings, self.db, max_yield=cap))
+            await self._reply(
+                peer_id,
+                format_status(
+                    self.settings,
+                    self.db,
+                    max_yield=cap,
+                    public=not is_admin,
+                ),
+            )
         elif command in {"/help", "/commands"}:
-            await self._reply(peer_id, HELP_TEXT, keyboard=MAIN_KEYBOARD)
+            await self._reply(peer_id, help_text, keyboard=keyboard)
         else:
             await self._reply(peer_id, "Неизвестная команда. /help — список команд.")
 
@@ -548,7 +683,7 @@ class BotHandlers:
             )
         await self._reply(peer_id, "\n".join(lines))
 
-    async def _ideas(self, peer_id: int) -> None:
+    async def _ideas(self, peer_id: int, *, public: bool = False) -> None:
         try:
             snapshot = await self._key_rate_snapshot()
             ideas = build_ideas(self.settings, self.db, snapshot, limit=3)
@@ -556,7 +691,7 @@ class BotHandlers:
             log.warning("ideas failed: %s", exc)
             await self._reply(peer_id, f"Не удалось построить идеи: {exc}")
             return
-        saved = save_ideas(self.db, ideas)
+        saved = 0 if public else save_ideas(self.db, ideas)
         text = render_ideas(ideas, snapshot)
         if saved:
             text += f"\n\nВ журнал добавлено идей: {saved}."
@@ -649,10 +784,23 @@ class BotHandlers:
     def _dialog_key(self, peer_id: int) -> str:
         return f"dialog:{peer_id}"
 
+    def _dialog_ts_key(self, peer_id: int) -> str:
+        return f"dialog_ts:{peer_id}"
+
     def _load_dialog(self, peer_id: int) -> list[dict[str, str]]:
         raw = self.db.kv_get(self._dialog_key(peer_id))
         if not raw:
             return []
+        stamp = self.db.kv_get(self._dialog_ts_key(peer_id))
+        if stamp:
+            try:
+                age = (now_msk() - datetime.fromisoformat(stamp)).total_seconds()
+                if age > max(1, self.settings.dialogue_ttl_minutes) * 60:
+                    self.db.kv_set(self._dialog_key(peer_id), "[]")
+                    self.db.kv_set(self._dialog_ts_key(peer_id), "")
+                    return []
+            except ValueError:
+                pass
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
@@ -673,20 +821,37 @@ class BotHandlers:
             self._dialog_key(peer_id),
             json.dumps(history[-12:], ensure_ascii=False),
         )
+        self.db.kv_set(self._dialog_ts_key(peer_id), now_msk().isoformat())
 
-    async def _ask(self, peer_id: int, argument: str) -> None:
+    async def _ask(
+        self,
+        peer_id: int,
+        argument: str,
+        *,
+        user_id: int | None = None,
+        public: bool = False,
+    ) -> None:
         question = argument.strip()
         if not question:
             await self._reply(peer_id, "Напиши вопрос: /ask что интересного в коридоре ставки?")
             return
         history = self._load_dialog(peer_id)
-        answer = await Assistant(self.settings, self.db).answer(question, history=history)
-        if not answer.startswith(("Не удалось", "LLM не настроен")):
+        answer = await Assistant(
+            self.settings,
+            self.db,
+            public=public,
+        ).answer(
+            question,
+            history=history,
+            user_id=user_id,
+        )
+        if not answer.startswith(("Не удалось", "LLM не настроен", "Дневной лимит")):
             self._save_dialog(peer_id, question, answer)
         await self._reply(peer_id, answer)
 
     async def _clear_dialog(self, peer_id: int) -> None:
         self.db.kv_set(self._dialog_key(peer_id), "[]")
+        self.db.kv_set(self._dialog_ts_key(peer_id), "")
         await self._reply(peer_id, "История диалога очищена.")
 
     async def _relative(self, peer_id: int, argument: str) -> None:
@@ -819,27 +984,25 @@ class BotHandlers:
 
     async def _screen(self, peer_id: int, argument: str) -> None:
         cap = await resolve_max_yield(self.settings, self.db)
-        tokens = [token for token in re.split(r"[\s,;]+", argument.lower()) if token]
-        coupon_type = None
-        freqs: list[float] = []
-        for token in tokens:
-            if token in COUPON_TYPE_ALIASES:
-                coupon_type = COUPON_TYPE_ALIASES[token]
-            elif re.fullmatch(r"\d{1,2}", token):
-                value = int(token)
-                if 1 <= value <= 12:
-                    freqs.append(float(value))
-        filters = ScreenFilters(
-            min_yield_pct=self.settings.min_yield_pct,
-            max_yield_pct=cap.value_pct,
-            max_duration_years=self.settings.max_duration_years,
-            min_rating=self.settings.min_rating,
-            min_price_pct=self.settings.min_price_pct,
-            max_price_pct=self.settings.max_price_pct,
-            coupon_type=coupon_type,
-            coupon_freqs=tuple(freqs) if freqs else None,
-            position_size_rub=self.settings.position_size_rub,
+        filters = parse_screen_query(self.settings, argument, cap)
+        await self._reply(
+            peer_id,
+            format_screen(
+                self.settings,
+                self.db,
+                max_yield=cap,
+                filters=filters,
+            ),
         )
+
+    async def _preset(self, peer_id: int, argument: str) -> None:
+        name = argument.strip().lower()
+        if not name or preset_name(name) is None:
+            labels = ", ".join(PRESET_LABELS.values())
+            await self._reply(peer_id, f"Пресеты: {labels}.\nПример: /preset консервативный")
+            return
+        cap = await resolve_max_yield(self.settings, self.db)
+        filters = preset_filters(self.settings, name, cap)
         await self._reply(
             peer_id,
             format_screen(

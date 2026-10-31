@@ -106,6 +106,41 @@ def test_assistant_uses_history(tmp_path) -> None:
         db.close()
 
 
+def test_public_assistant_hides_portfolio_tools(tmp_path) -> None:
+    db = Database(str(tmp_path / "assistant_public.db"))
+    settings = replace(load_settings(), openai_api_key="test", llm_enabled=True)
+    try:
+        assistant = Assistant(settings, db, public=True, client=FakeClient())
+        names = {item["function"]["name"] for item in assistant.tools}
+        assert "screen_bonds" in names
+        assert "tax_info" in names
+        assert "portfolio" not in names
+        assert "stress" not in names
+        assert "calendar" not in names
+    finally:
+        db.close()
+
+
+def test_daily_token_limit(tmp_path) -> None:
+    db = Database(str(tmp_path / "assistant_limit.db"))
+    settings = replace(
+        load_settings(),
+        openai_api_key="test",
+        llm_enabled=True,
+        llm_daily_token_limit=500_000,
+    )
+    client = FakeClient()
+    try:
+        db.add_llm_usage(42, 500_000)
+        answer = asyncio.run(
+            Assistant(settings, db, client=client).answer("вопрос", user_id=42)
+        )
+        assert "Дневной лимит" in answer
+        assert client.chat.completions.calls == 0
+    finally:
+        db.close()
+
+
 def test_assistant_fallback_without_key(tmp_path) -> None:
     db = Database(str(tmp_path / "assistant2.db"))
     settings = replace(load_settings(), openai_api_key="", llm_enabled=True)

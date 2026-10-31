@@ -131,6 +131,16 @@ class VkClient:
             event_data=json.dumps(event_data, ensure_ascii=False),
         )
 
+    async def is_group_member(self, user_id: int, group_id: int | None = None) -> bool:
+        response = await self.call(
+            "groups.isMember",
+            group_id=group_id or self.settings.vk_group_id,
+            user_id=user_id,
+        )
+        if isinstance(response, dict):
+            return bool(response.get("member"))
+        return bool(response)
+
     async def get_long_poll_server(self) -> dict[str, Any]:
         response = await self.call(
             "groups.getLongPollServer",

@@ -9,6 +9,10 @@ from bondbot.analytics.bonds import (
     required_daily_volume_mn,
     screen_bonds,
 )
+from bondbot.analytics.presets import preset_filters
+from bondbot.analytics.query import parse_screen_query
+from bondbot.analytics.rates import MaxYield
+from bondbot.config import load_settings
 from bondbot.models import Bond, ScreenFilters
 
 
@@ -75,6 +79,42 @@ def test_screen_coupon_filters() -> None:
     )
     results = screen_bonds(bonds, filters, required_volume_mn=20.0)
     assert [item.bond.isin for item in results] == ["FIX2", "FIX12"]
+
+
+def test_parse_screen_query_and_sort() -> None:
+    settings = load_settings()
+    cap = MaxYield(value_pct=24.0)
+    filters = parse_screen_query(
+        settings,
+        "постоянный 12 погашение до 2028-12-31 сортировка доходность по убыванию",
+        cap,
+    )
+    assert filters.coupon_type == "fixed"
+    assert filters.coupon_freqs == (12.0,)
+    assert filters.maturity_to is not None
+    assert filters.sort_by == "yield"
+    assert filters.sort_order == "desc"
+
+
+def test_preset_filters() -> None:
+    settings = load_settings()
+    cap = MaxYield(value_pct=24.0)
+    conservative = preset_filters(settings, "консервативный", cap)
+    assert conservative.coupon_type == "fixed"
+    assert conservative.max_duration_years == 2.0
+    assert conservative.min_rating == "A-"
+    assert conservative.only_complete_data
+
+
+def test_screen_sorting() -> None:
+    bonds = [
+        Bond(isin="LOW", name="Low", ytm_pct=15.0, duration_years=1.0, rating="AAA", volume_mn_rub=100.0),
+        Bond(isin="HIGH", name="High", ytm_pct=20.0, duration_years=1.0, rating="AAA", volume_mn_rub=100.0),
+        Bond(isin="MID", name="Mid", ytm_pct=17.0, duration_years=1.0, rating="AAA", volume_mn_rub=100.0),
+    ]
+    filters = ScreenFilters(sort_by="yield", sort_order="asc")
+    results = screen_bonds(bonds, filters, required_volume_mn=20.0)
+    assert [item.bond.isin for item in results] == ["LOW", "MID", "HIGH"]
 
 
 def test_screen_filters() -> None:

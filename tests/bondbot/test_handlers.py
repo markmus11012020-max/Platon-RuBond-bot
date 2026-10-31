@@ -29,10 +29,14 @@ ADMIN_ID = 42
 class FakeVk:
     def __init__(self) -> None:
         self.sent: list[dict] = []
+        self.members = {ADMIN_ID}
 
     async def send_message(self, peer_id: int, message: str, **kwargs) -> int:
         self.sent.append({"peer_id": peer_id, "message": message, **kwargs})
         return 1
+
+    async def is_group_member(self, user_id: int, group_id: int | None = None) -> bool:
+        return user_id in self.members
 
 
 @pytest.fixture
@@ -162,7 +166,7 @@ def test_private_start_stores_owner_peer(db: Database) -> None:
     assert "аналитик" in vk.sent[-1]["message"].lower()
 
 
-def test_stranger_is_ignored(db: Database) -> None:
+def test_non_member_is_denied(db: Database) -> None:
     handlers, vk = _owner_handlers(db)
     asyncio.run(
         handlers.handle_update(
@@ -178,7 +182,75 @@ def test_stranger_is_ignored(db: Database) -> None:
             }
         )
     )
-    assert vk.sent == []
+    assert vk.sent
+    assert "участникам сообщества" in vk.sent[-1]["message"]
+
+
+def test_public_member_gets_help_without_admin_commands(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    member_id = ADMIN_ID + 5
+    vk.members.add(member_id)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": member_id,
+                        "text": "/help",
+                    }
+                },
+            }
+        )
+    )
+    message = vk.sent[-1]["message"]
+    assert "Platon Bond Bot" in message
+    assert "/screen" in message
+    assert "/portfolio" not in message
+    assert "Админ-команды" not in message
+
+
+def test_public_member_cannot_use_admin_command(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    member_id = ADMIN_ID + 6
+    vk.members.add(member_id)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": member_id,
+                        "text": "/portfolio",
+                    }
+                },
+            }
+        )
+    )
+    assert "администратору" in vk.sent[-1]["message"]
+
+
+def test_tax_and_iis_reference(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    for command, expected in (("/iis", "ИИС-3"), ("/tax", "НДФЛ")):
+        asyncio.run(
+            handlers.handle_update(
+                {
+                    "type": "message_new",
+                    "object": {
+                        "message": {
+                            "peer_id": CHAT_PEER,
+                            "from_id": ADMIN_ID,
+                            "text": command,
+                        }
+                    },
+                }
+            )
+        )
+        assert expected in vk.sent[-1]["message"]
+        assert "не налоговая консультация" in vk.sent[-1]["message"]
 
 
 def test_free_text_goes_to_dialog(db: Database) -> None:
@@ -269,7 +341,7 @@ def test_screen_coupon_filter(db: Database) -> None:
         )
     )
     message = vk.sent[-1]["message"]
-    assert "Купон: постоянный" in message
+    assert "купон постоянный" in message
     assert "выплат в год: 2" in message
     assert "FIX2" in message
 

@@ -19,6 +19,7 @@ from bondbot.analytics.rates import resolve_max_yield
 from bondbot.config import Settings
 from bondbot.db import Database
 from bondbot.models import ScreenFilters, utcnow
+from bondbot.knowledge import format_topic
 from bondbot.services.ideas import build_ideas
 from bondbot.services.issuer import enrich_issuer_payload, issuer_payload
 from bondbot.services.news import build_news_digest
@@ -42,10 +43,12 @@ SYSTEM_PROMPT = """Ты — старший аналитик рынка росс�
    Не проси ISIN, пока не проверил базу и новости: у нас есть поиск по названию.
 8. Если просят постоянный/фиксированный купон или частоту выплат 2/4/12 —
    вызывай screen_bonds(coupon_type="fixed", coupon_freqs=[...]).
-9. Пиши простым деловым текстом без Markdown: без #, **, *, таблиц и обратных кавычек.
+9. По вопросам ИИС-3, НДФЛ и налога на купон всегда вызывай tax_info,
+   не пересказывай нормы по памяти.
+10. Пиши простым деловым текстом без Markdown: без #, **, *, таблиц и обратных кавычек.
    Списки — через «•», заголовки — обычной строкой с двоеточием.
-10. Отвечай компактно: не более 8–10 пунктов, без воды и повторения вопроса.
-11. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
+11. Отвечай компактно: не более 8–10 пунктов, без воды и повторения вопроса.
+12. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
 """
 
 TOOL_SPECS: list[dict[str, Any]] = [
@@ -88,7 +91,21 @@ TOOL_SPECS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "offset": {"type": "integer", "minimum": 0},
+                    "min_yield_pct": {"type": "number"},
+                    "max_yield_pct": {"type": "number"},
+                    "min_duration_years": {"type": "number"},
+                    "max_duration_years": {"type": "number"},
+                    "maturity_from": {"type": "string", "description": "YYYY-MM-DD"},
+                    "maturity_to": {"type": "string", "description": "YYYY-MM-DD"},
+                    "offer_from": {"type": "string", "description": "YYYY-MM-DD"},
+                    "offer_to": {"type": "string", "description": "YYYY-MM-DD"},
+                    "min_rating": {"type": "string"},
+                    "min_price_pct": {"type": "number"},
+                    "max_price_pct": {"type": "number"},
+                    "min_volume_mn_rub": {"type": "number"},
+                    "min_issue_size_rub": {"type": "number"},
                     "coupon_type": {
                         "type": "string",
                         "enum": ["fixed", "floating", "structured", "any"],
@@ -97,6 +114,18 @@ TOOL_SPECS: list[dict[str, Any]] = [
                         "type": "array",
                         "items": {"type": "integer", "minimum": 1, "maximum": 12},
                     },
+                    "exclude_amortized": {"type": "boolean"},
+                    "only_complete_data": {"type": "boolean"},
+                    "issuer": {"type": "string"},
+                    "sort_by": {
+                        "type": "string",
+                        "enum": [
+                            "yield", "duration", "maturity", "offer", "coupon_freq",
+                            "coupon_type", "rating", "price", "volume", "issue_size",
+                            "updated", "score",
+                        ],
+                    },
+                    "sort_order": {"type": "string", "enum": ["asc", "desc"]},
                 },
             },
         },
@@ -126,6 +155,23 @@ TOOL_SPECS: list[dict[str, Any]] = [
             "name": "market_rate",
             "description": "Ключевая ставка ЦБ и дата источника.",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tax_info",
+            "description": "Справочная информация по ИИС-3, НДФЛ и налогу на купон.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "enum": ["iis3", "ndfl", "coupons"],
+                    }
+                },
+                "required": ["topic"],
+            },
         },
     },
     {
@@ -229,10 +275,18 @@ class Assistant:
         db: Database,
         *,
         client: Any | None = None,
+        public: bool = False,
     ) -> None:
         self.settings = settings
         self.db = db
+        self.public = public
         self._client = client
+        blocked = {"portfolio", "stress", "calendar"} if public else set()
+        self.tools = [
+            spec
+            for spec in TOOL_SPECS
+            if spec["function"]["name"] not in blocked
+        ]
 
     @property
     def client(self) -> Any:
@@ -248,15 +302,25 @@ class Assistant:
         self,
         question: str,
         history: list[dict[str, str]] | None = None,
+        *,
+        user_id: int | None = None,
     ) -> str:
         question = (question or "").strip()
         if not question:
             return "Напиши вопрос: /ask что интересного в коридоре ставки?"
         if not self.settings.llm_enabled or not self.settings.openai_api_key:
             return (
-                "LLM не настроен. Доступны команды: /status, /portfolio, /screen, "
-                "/safe, /bond ISIN, /value ISIN, /risk, /stress, /news, /strategy, /idea."
+                "LLM не настроен. Доступны команды: /status, /screen, /safe, "
+                "/bond ISIN, /value ISIN, /risk ISIN, /news, /strategy, /idea, /tax, /iis."
             )
+        used_tokens = 0
+        if user_id is not None and self.settings.llm_daily_token_limit > 0:
+            used_tokens = self.db.llm_tokens_today(user_id)
+            if used_tokens >= self.settings.llm_daily_token_limit:
+                return (
+                    f"Дневной лимит LLM исчерпан: {self.settings.llm_daily_token_limit:,} "
+                    "токенов. Попробуй завтра."
+                ).replace(",", " ")
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
         ]
@@ -269,14 +333,25 @@ class Assistant:
         try:
             empty_retry = False
             for _ in range(max(1, self.settings.llm_max_tool_rounds) + 1):
+                max_tokens = self.settings.llm_max_tokens
+                if user_id is not None and self.settings.llm_daily_token_limit > 0:
+                    remaining = self.settings.llm_daily_token_limit - used_tokens
+                    if remaining <= 0:
+                        return "Дневной лимит LLM исчерпан. Попробуй завтра."
+                    max_tokens = max(128, min(max_tokens, remaining))
                 response = await self.client.chat.completions.create(
                     model=self.settings.openai_model,
                     messages=messages,
-                    tools=TOOL_SPECS,
+                    tools=self.tools,
                     tool_choice="auto",
                     temperature=0.2,
-                    max_tokens=self.settings.llm_max_tokens,
+                    max_tokens=max_tokens,
                 )
+                usage = getattr(response, "usage", None)
+                spent = int(getattr(usage, "total_tokens", 0) or 0) if usage else 0
+                if user_id is not None:
+                    used_tokens += spent
+                    self.db.add_llm_usage(user_id, spent, requests=1)
                 choice = response.choices[0]
                 message = choice.message
                 finish_reason = getattr(choice, "finish_reason", None)
@@ -340,11 +415,14 @@ class Assistant:
             "safe_list": self._tool_safe,
             "portfolio": self._tool_portfolio,
             "market_rate": self._tool_market_rate,
+            "tax_info": self._tool_tax,
             "news": self._tool_news,
             "calendar": self._tool_calendar,
             "stress": self._tool_stress,
             "new_issues": self._tool_new_issues,
         }
+        if self.public and name in {"portfolio", "stress", "calendar"}:
+            return {"error": "инструмент недоступен в публичном режиме"}
         handler = handlers.get(name)
         if handler is None:
             return {"error": f"неизвестный инструмент {name}"}
@@ -414,17 +492,42 @@ class Assistant:
     async def _tool_screen(self, arguments: dict[str, Any]) -> Any:
         snapshot = await self._snapshot()
         cap = await resolve_max_yield(self.settings, self.db)
+        def number(key: str, default: float | None) -> float | None:
+            value = arguments.get(key)
+            return float(value) if value is not None else default
+
+        def value_date(key: str):
+            raw = arguments.get(key)
+            if not raw:
+                return None
+            try:
+                return date.fromisoformat(str(raw)[:10])
+            except ValueError:
+                return None
+
         coupon_type = str(arguments.get("coupon_type") or "").strip().lower() or None
         coupon_freqs = arguments.get("coupon_freqs") or None
         filters = ScreenFilters(
-            min_yield_pct=self.settings.min_yield_pct,
-            max_yield_pct=cap.value_pct,
-            max_duration_years=self.settings.max_duration_years,
-            min_rating=self.settings.min_rating,
-            min_price_pct=self.settings.min_price_pct,
-            max_price_pct=self.settings.max_price_pct,
+            min_yield_pct=number("min_yield_pct", self.settings.min_yield_pct),
+            max_yield_pct=number("max_yield_pct", cap.value_pct),
+            min_duration_years=number("min_duration_years", None),
+            max_duration_years=number("max_duration_years", self.settings.max_duration_years),
+            maturity_from=value_date("maturity_from"),
+            maturity_to=value_date("maturity_to"),
+            offer_from=value_date("offer_from"),
+            offer_to=value_date("offer_to"),
+            min_rating=str(arguments.get("min_rating") or self.settings.min_rating),
+            min_price_pct=number("min_price_pct", self.settings.min_price_pct),
+            max_price_pct=number("max_price_pct", self.settings.max_price_pct),
+            min_volume_mn_rub=number("min_volume_mn_rub", None),
+            min_issue_size_rub=number("min_issue_size_rub", None),
             coupon_type=coupon_type,
             coupon_freqs=tuple(float(value) for value in coupon_freqs) if coupon_freqs else None,
+            exclude_amortized=bool(arguments.get("exclude_amortized")),
+            only_complete_data=bool(arguments.get("only_complete_data")),
+            issuer=str(arguments.get("issuer") or "").strip() or None,
+            sort_by=str(arguments.get("sort_by") or "score"),
+            sort_order=str(arguments.get("sort_order") or "desc"),
             position_size_rub=self.settings.position_size_rub,
         )
         required = required_daily_volume_mn(
@@ -432,22 +535,32 @@ class Assistant:
         )
         results = screen_bonds(
             self.db.list_bonds(), filters, required_volume_mn=required
-        )[: int(arguments.get("limit") or 5)]
+        )
+        limit = max(1, min(20, int(arguments.get("limit") or 5)))
+        offset = max(0, int(arguments.get("offset") or 0))
+        page = results[offset : offset + limit]
         return {
             "key_rate_pct": snapshot.value_pct if snapshot else None,
             "max_yield_pct": cap.value_pct,
+            "total": len(results),
+            "offset": offset,
             "items": [
                 {
                     "isin": item.bond.isin,
                     "name": item.bond.name,
                     "ytm_pct": item.bond.ytm_pct,
                     "duration_years": item.bond.duration_years,
+                    "maturity_date": item.bond.maturity_date.isoformat() if item.bond.maturity_date else None,
+                    "offer_date": item.bond.offer_date.isoformat() if item.bond.offer_date else None,
+                    "coupon_type": item.bond.coupon_type,
+                    "coupon_freq": item.bond.coupon_freq,
                     "rating": item.bond.rating,
                     "price_pct": item.bond.price_pct,
                     "volume_mn_rub": item.bond.volume_mn_rub,
                     "liquidity_share": item.liquidity_share,
+                    "score": item.score,
                 }
-                for item in results
+                for item in page
             ],
         }
 
@@ -523,6 +636,9 @@ class Assistant:
             "as_of": snapshot.as_of.isoformat(),
             "stale": snapshot.stale,
         }
+
+    async def _tool_tax(self, arguments: dict[str, Any]) -> Any:
+        return {"topic": arguments.get("topic") or "ndfl", "text": format_topic(str(arguments.get("topic") or "ndfl"))}
 
     async def _tool_news(self, arguments: dict[str, Any]) -> Any:
         query = str(arguments.get("query") or "").strip()

@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from bondbot.data.quality import BOND_LIMITS, sanitize_bond, sanitize_position
-from bondbot.models import Bond, Coupon, PortfolioPosition
+from bondbot.models import MSK, Bond, Coupon, PortfolioPosition
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bonds (
@@ -163,6 +163,17 @@ CREATE TABLE IF NOT EXISTS ideas (
 
 CREATE INDEX IF NOT EXISTS idx_ideas_status
     ON ideas(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS llm_usage (
+    user_id INTEGER NOT NULL,
+    usage_date TEXT NOT NULL,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    requests INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, usage_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_usage_date
+    ON llm_usage(usage_date, tokens DESC);
 """
 
 
@@ -273,6 +284,13 @@ class Database:
             if columns and "coupon_type" not in columns:
                 self.conn.execute("ALTER TABLE bonds ADD COLUMN coupon_type TEXT")
             version = 5
+
+        if version < 6:
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_llm_usage_date "
+                "ON llm_usage(usage_date, tokens DESC)"
+            )
+            version = 6
 
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
@@ -892,6 +910,33 @@ class Database:
                 (max(1, limit),),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def llm_tokens_today(self, user_id: int, day: date | None = None) -> int:
+        usage_date = (day or datetime.now(MSK).date()).isoformat()
+        row = self.conn.execute(
+            "SELECT tokens FROM llm_usage WHERE user_id = ? AND usage_date = ?",
+            (int(user_id), usage_date),
+        ).fetchone()
+        return int(row["tokens"]) if row else 0
+
+    def add_llm_usage(
+        self,
+        user_id: int,
+        tokens: int,
+        *,
+        requests: int = 1,
+        day: date | None = None,
+    ) -> None:
+        usage_date = (day or datetime.now(MSK).date()).isoformat()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO llm_usage (user_id, usage_date, tokens, requests) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(user_id, usage_date) DO UPDATE SET "
+                "tokens = llm_usage.tokens + excluded.tokens, "
+                "requests = llm_usage.requests + excluded.requests",
+                (int(user_id), usage_date, max(0, int(tokens)), max(0, int(requests))),
+            )
 
     def close_idea(self, idea_id: int, outcome_pct: float | None, note: str = "") -> None:
         with self.conn:

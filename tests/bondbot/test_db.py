@@ -64,6 +64,18 @@ def test_repair_bond_data_clears_legacy_outliers(tmp_path) -> None:
         db.close()
 
 
+def test_llm_usage_quota(tmp_path) -> None:
+    db = Database(str(tmp_path / "usage.db"))
+    try:
+        assert db.llm_tokens_today(7) == 0
+        db.add_llm_usage(7, 1200)
+        db.add_llm_usage(7, 800)
+        assert db.llm_tokens_today(7) == 2000
+        assert db.llm_tokens_today(8) == 0
+    finally:
+        db.close()
+
+
 def test_old_unsent_alerts_expire(tmp_path) -> None:
     db = Database(str(tmp_path / "alerts.db"))
     try:
