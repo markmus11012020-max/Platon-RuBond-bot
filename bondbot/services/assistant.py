@@ -338,6 +338,7 @@ class Assistant:
         messages.append({"role": "user", "content": question})
         try:
             empty_retry = False
+            tool_rounds = 0
             for _ in range(max(1, self.settings.llm_max_tool_rounds) + 1):
                 max_tokens = self.settings.llm_max_tokens
                 if user_id is not None and self.settings.llm_daily_token_limit > 0:
@@ -349,7 +350,7 @@ class Assistant:
                     model=self.settings.openai_model,
                     messages=messages,
                     tools=self.tools,
-                    tool_choice="auto",
+                    tool_choice="auto" if tool_rounds < 2 else "none",
                     temperature=0.2,
                     max_tokens=max_tokens,
                 )
@@ -395,6 +396,7 @@ class Assistant:
                         ],
                     }
                 )
+                tool_rounds += 1
                 for call in tool_calls:
                     try:
                         arguments = json.loads(call.function.arguments or "{}")
