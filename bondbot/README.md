@@ -59,6 +59,8 @@
 - T-Invest — официальный read-only API (`BONDBOT_TINVEST_TOKEN`). `/broker accounts`
   покажет счета, `/broker sync tinvest` заменит бумажный портфель реальными позициями.
   Автосинк включается через `BONDBOT_BROKER_SYNC_ENABLED=1`.
+  В Docker-образ добавлены официальные сертификаты Russian Trusted Root/Sub CA
+  (`bondbot/certs/`), без них TLS-запросы к T-Invest API не проходят.
 - СберИнвестиции — официального API для брокерских счетов физлиц нет; подключение
   через API невозможно. Рабочий путь — импорт брокерского отчёта Сбера.
 

@@ -80,6 +80,8 @@ docker compose -p platon-bond-bot -f docker-compose.bondbot.yml start
 - T-Invest: задать `BONDBOT_TINVEST_TOKEN` (read-only токен) и при необходимости
   `BONDBOT_TINVEST_ACCOUNT_ID`; проверить `python -m bondbot.cli broker accounts`,
   затем `/broker sync tinvest` в VK или `python -m bondbot.cli broker sync`.
+  В образ включены сертификаты Russian Trusted CA (`bondbot/certs/`); при истечении
+  обновить их с `https://gu-st.ru/content/lending/`.
 - Автосинк: `BONDBOT_BROKER_SYNC_ENABLED=1`, интервал `BONDBOT_BROKER_SYNC_MINUTES`.
 - СберИнвестиции: официального API для брокерских счетов физлиц нет. Не добавлять
   неофициальные/скрапинговые коннекторы; использовать импорт брокерского отчёта.
