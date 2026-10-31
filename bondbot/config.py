@@ -87,6 +87,18 @@ class Settings:
     moex_enabled: bool = True
     moex_base: str = "https://iss.moex.com"
 
+    # News
+    news_enabled: bool = True
+    news_feeds: str = ""
+    news_interval_minutes: int = 30
+    news_hours: int = 24
+
+    # LLM assistant
+    llm_enabled: bool = True
+    llm_max_tool_rounds: int = 4
+    llm_max_tokens: int = 900
+    llm_timeout: int = 45
+
     # Default screening profile
     min_yield_pct: float = 14.0
     max_yield_pct: float = 35.0
@@ -155,6 +167,14 @@ def load_settings() -> Settings:
         moex_enabled=_bool("BONDBOT_MOEX_ENABLED", True),
         moex_base=_env("BONDBOT_MOEX_BASE", "https://iss.moex.com").rstrip("/")
         or "https://iss.moex.com",
+        news_enabled=_bool("BONDBOT_NEWS_ENABLED", True),
+        news_feeds=_env("BONDBOT_NEWS_FEEDS"),
+        news_interval_minutes=_int("BONDBOT_NEWS_INTERVAL_MINUTES", 30),
+        news_hours=_int("BONDBOT_NEWS_HOURS", 24),
+        llm_enabled=_bool("BONDBOT_LLM_ENABLED", True),
+        llm_max_tool_rounds=_int("BONDBOT_LLM_MAX_TOOL_ROUNDS", 4),
+        llm_max_tokens=_int("BONDBOT_LLM_MAX_TOKENS", 900),
+        llm_timeout=_int("BONDBOT_LLM_TIMEOUT", 45),
         min_yield_pct=_float("BONDBOT_MIN_YIELD_PCT", 14.0),
         max_yield_pct=_float("BONDBOT_MAX_YIELD_PCT", 35.0),
         max_duration_years=_float("BONDBOT_MAX_DURATION_YEARS", 5.0),

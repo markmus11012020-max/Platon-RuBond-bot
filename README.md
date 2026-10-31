@@ -153,7 +153,9 @@ Platon-RuBond-bot/
 .\.venv\Scripts\python -m bondbot.cli audit
 ```
 
-Команды VK: `/portfolio`, `/bond ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/status`, `/help`.
+Команды VK: `/portfolio`, `/bond ISIN`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/risk`, `/stress`, `/news`, `/new`, `/idea`, `/journal`, `/strategy`, `/position`, `/ask`, `/status`, `/help`.
+
+Планировщик обновляет рынок и новости, формирует утренний дайджест, алерты и стратегию недели. LLM используется только для объяснений: все числа берутся из детерминированных инструментов.
 
 Production-развёртывание — отдельный compose-project `platon-bond-bot`, health на `127.0.0.1:8081`; существующий freelance-бот (порт 8080) и Caddy не затрагиваются.
 
@@ -327,10 +329,11 @@ class CbondsParser(BaseParser):
 - [x] Observability (LocalTracer + LangSmith)
 - [x] Streamlit UI (light/dark, 4 вкладки)
 - [x] Portfolio persistence + метрики
-- [x] VK-бот: smart-lab, CBR key rate, скрининг, портфель, `/safe`, `/exit`, `/alloc`
+- [x] VK-бот: smart-lab, MOEX ISS, CBR key rate, скрининг, портфель, `/safe`, `/exit`, `/alloc`
 - [x] Аудит стратегических расчётов (`strategy_audit`)
-- [ ] Планировщик обновления данных и проактивные алерты
-- [ ] Новости, новые выпуски, LLM-ассистент `/ask`
+- [x] Планировщик обновления данных и проактивные алерты
+- [x] Новости RSS, новые выпуски, риск-скор, стресс-тест
+- [x] LLM-ассистент `/ask`, журнал идей `/journal`, стратегия недели
 - [ ] Telegram-алерты (заглушка готова, нужен бот-токен)
 - [ ] Backtesting стратегий на исторических данных
 - [ ] Интеграция с Cbonds/БКС для расширенных данных

@@ -213,3 +213,75 @@ def test_strategy_commands_reply(db: Database) -> None:
         )
         assert header in vk.sent[-1]["message"]
     assert db.audits(limit=10)
+
+
+def test_smart_commands_reply(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    db.kv_set(
+        CACHE_KEY,
+        KeyRateSnapshot(
+            value_pct=14.0,
+            as_of=date(2026, 10, 30),
+            fetched_at=utcnow(),
+        ).to_json(),
+    )
+    cases = {
+        "/value RU000A10G1T5": "📐",
+        "/risk": "Риск",
+        "/risk RU000A10G1T5": "Риск",
+        "/stress 100": "Стресс-тест",
+        "/news": "За последние",
+        "/new": "Новых выпусков",
+        "/journal": "Журнал идей",
+        "/strategy": "Стратегия",
+        "/idea": "Идеи в коридоре",
+        "/position list": "Бумажный портфель",
+        "/ask": "Напиши вопрос",
+    }
+    for command, header in cases.items():
+        asyncio.run(
+            handlers.handle_update(
+                {
+                    "type": "message_new",
+                    "object": {
+                        "message": {
+                            "peer_id": CHAT_PEER,
+                            "from_id": ADMIN_ID,
+                            "text": command,
+                        }
+                    },
+                }
+            )
+        )
+        assert header in vk.sent[-1]["message"], command
+
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/position add RU000A10G1T5 1 99",
+                    }
+                },
+            }
+        )
+    )
+    assert "Позиция добавлена" in vk.sent[-1]["message"]
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/position remove RU000A10G1T5",
+                    }
+                },
+            }
+        )
+    )
+    assert "удалена" in vk.sent[-1]["message"]

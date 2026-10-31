@@ -15,6 +15,8 @@ from bondbot.models import MSK
 from bondbot.services.alerts import build_and_send, owner_peer
 from bondbot.services.backup import backup_database
 from bondbot.services.digest import build_digest
+from bondbot.services.ideas import build_strategy_note
+from bondbot.services.news import build_news_digest, refresh_news
 from bondbot.services.refresh import (
     RefreshResult,
     refresh_details,
@@ -81,6 +83,25 @@ class BotScheduler:
             self._digest,
             CronTrigger(hour=digest_hour, minute=digest_minute, timezone=MSK),
             id="digest",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+        )
+        if self.settings.news_enabled:
+            self.scheduler.add_job(
+                self._news,
+                IntervalTrigger(minutes=max(5, self.settings.news_interval_minutes)),
+                id="news_refresh",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                next_run_time=datetime.now(MSK) + timedelta(seconds=30),
+            )
+        self.scheduler.add_job(
+            self._strategy,
+            CronTrigger(day_of_week="fri", hour=19, minute=0, timezone=MSK),
+            id="strategy_note",
             replace_existing=True,
             coalesce=True,
             max_instances=1,
@@ -174,6 +195,30 @@ class BotScheduler:
             return {"sent": True, "chars": len(text)}
 
         await self._run("digest", run)
+
+    async def _news(self) -> None:
+        async def run() -> dict[str, Any]:
+            result = await refresh_news(self.settings, self.db)
+            return {
+                "feeds": result.feeds,
+                "fetched": result.fetched,
+                "saved": result.saved,
+                "errors": list(result.errors),
+            }
+
+        await self._run("news_refresh", run)
+
+    async def _strategy(self) -> None:
+        async def run() -> dict[str, Any]:
+            snapshot = await refresh_key_rate(self.settings, self.db)
+            text = build_strategy_note(self.settings, self.db, snapshot)
+            peer_id = owner_peer(self.settings, self.db)
+            if not peer_id:
+                return {"sent": False, "reason": "owner peer is not configured"}
+            await self.vk.send_message(peer_id, text)
+            return {"sent": True, "chars": len(text)}
+
+        await self._run("strategy_note", run)
 
     async def _backup(self) -> None:
         async def run() -> dict[str, Any]:

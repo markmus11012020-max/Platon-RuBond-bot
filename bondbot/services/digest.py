@@ -7,6 +7,7 @@ from bondbot.config import Settings
 from bondbot.data.cbr import KeyRateSnapshot
 from bondbot.db import Database
 from bondbot.models import to_msk, utcnow
+from bondbot.services.news import build_news_digest
 from bondbot.strategy.safe import build_safe_list, safe_range
 from bondbot.strategy.types import SafeListResult
 
@@ -104,6 +105,11 @@ def build_digest(
         lines.append("")
         lines.append("Календарь:")
         lines.extend(f"• {event}" for event in events[:8])
+
+    news = build_news_digest(settings, db, limit=3)
+    if "не найдено" not in news:
+        lines.append("")
+        lines.append(news)
 
     lines.append("")
     lines.append("Не индивидуальная инвестиционная рекомендация.")

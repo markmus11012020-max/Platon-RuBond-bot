@@ -46,6 +46,9 @@ async def start_health(
                 "llm": settings.llm_configured,
                 "scheduler": bool(scheduler and scheduler.started),
                 "last_market_refresh": db.kv_get("last_market_refresh") or None,
+                "last_news_refresh": db.kv_get("last_news_refresh") or None,
+                "news": db.news_count(),
+                "ideas": len(db.ideas(limit=100)),
                 "alerts_sent_today": db.alerts_sent_today(),
                 "last_jobs": db.last_jobs(5),
             }

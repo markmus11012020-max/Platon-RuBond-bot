@@ -41,8 +41,10 @@ docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli rate
 docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli safe --limit 5
 docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli exit
 docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli alloc
+docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli digest
 docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli jobs
 docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli backup
+docker exec platon-bond-bot-bondbot-1 python -m bondbot.cli repair
 ```
 
 ## Бэкап и восстановление

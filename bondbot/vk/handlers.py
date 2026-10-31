@@ -1,18 +1,37 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
 from bondbot.analytics.portfolio import analyze_portfolio
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
+from bondbot.analytics.risk import assess_bond_risk, assess_portfolio_risk, stress_portfolio
 from bondbot.config import Settings
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
-from bondbot.models import Bond, ScreenFilters, now_msk, to_msk
+from bondbot.models import Bond, PortfolioPosition, ScreenFilters, now_msk, to_msk
+from bondbot.services.assistant import Assistant
+from bondbot.services.ideas import (
+    build_ideas,
+    build_strategy_note,
+    render_ideas,
+    render_journal,
+    save_ideas,
+)
+from bondbot.services.news import build_news_digest
 from bondbot.strategy.allocation import build_allocation
 from bondbot.strategy.exit import build_exit_plan
-from bondbot.strategy.render import render_allocation, render_exit_plan, render_safe_list
+from bondbot.strategy.render import (
+    render_allocation,
+    render_exit_plan,
+    render_risk,
+    render_safe_list,
+    render_stress,
+    render_valuation,
+)
 from bondbot.strategy.safe import build_safe_list
+from bondbot.strategy.valuation import value_bond
 from bondbot.vk.client import VkClient, VkApiError
 
 log = logging.getLogger(__name__)
@@ -28,6 +47,16 @@ HELP_TEXT = """Platon Bond Bot — аналитика облигаций РФ.
 /safe — стабильные бумаги ЦБ+5–10 п.п.
 /exit — ликвидность и план выхода
 /alloc — целевая аллокация
+/value ISIN — доходность после налога, спреды, дюрация
+/risk [ISIN] — риск бумаги или портфеля
+/stress [б.п.] — стресс-тест по ставке
+/news [ISIN] — новости по портфелю или бумаге
+/new — новые выпуски
+/idea — идеи в коридоре
+/journal — журнал идей
+/strategy — стратегия на неделю
+/position add ISIN кол-во цена | remove ISIN | list
+/ask вопрос — ИИ-аналитик
 /status — состояние данных
 /connect — подключить беседу (админ)
 /help — эта справка
@@ -174,11 +203,23 @@ def format_status(
     coupons = sum(len(db.coupons(p.isin)) for p in positions)
     last = to_msk(max((b.fetched_at for b in bonds), default=None))
     cap = max_yield or MaxYield(value_pct=settings.max_yield_pct, source="fixed")
+    market_raw = db.kv_get("last_market_refresh")
+    news_raw = db.kv_get("last_news_refresh")
+    def stamp(raw: str) -> str:
+        if not raw:
+            return "—"
+        try:
+            return to_msk(datetime.fromisoformat(raw)).strftime("%d.%m.%Y %H:%M")
+        except ValueError:
+            return raw
     return (
         f"Бумаг в базе: {len(bonds)}\n"
         f"Позиций: {len(positions)}\n"
         f"Купонов в календаре: {coupons}\n"
-        f"Последнее обновление: {last.strftime('%d.%m.%Y %H:%M') if last else '—'}\n"
+        f"Новостей: {db.news_count()} · идей: {len(db.ideas(limit=100))}\n"
+        f"Последнее обновление карточек: {last.strftime('%d.%m.%Y %H:%M') if last else '—'}\n"
+        f"Рынок обновлён: {stamp(market_raw)}\n"
+        f"Новости обновлены: {stamp(news_raw)}\n"
         f"Лимит доходности: {cap.describe()}\n"
         f"LLM: {'on' if settings.llm_configured else 'off'} ({settings.openai_model})\n"
         f"VK: {'configured' if settings.vk_configured else 'not configured'}"
@@ -232,6 +273,26 @@ class BotHandlers:
             await self._alloc(peer_id)
         elif command == "/bond":
             await self._bond(peer_id, argument)
+        elif command == "/value":
+            await self._value(peer_id, argument)
+        elif command == "/risk":
+            await self._risk(peer_id, argument)
+        elif command == "/stress":
+            await self._stress(peer_id, argument)
+        elif command == "/news":
+            await self._news(peer_id, argument)
+        elif command == "/new":
+            await self._new_issues(peer_id)
+        elif command == "/idea":
+            await self._ideas(peer_id)
+        elif command == "/journal":
+            await self._reply(peer_id, render_journal(self.db))
+        elif command == "/strategy":
+            await self._strategy(peer_id)
+        elif command == "/position":
+            await self._position(peer_id, argument)
+        elif command == "/ask":
+            await self._ask(peer_id, argument)
         elif command == "/watch":
             await self._watch(peer_id, from_id, is_admin, argument)
         elif command == "/status":
@@ -239,10 +300,6 @@ class BotHandlers:
             await self._reply(peer_id, format_status(self.settings, self.db, max_yield=cap))
         elif command in {"/help", "/commands"}:
             await self._reply(peer_id, HELP_TEXT)
-        elif command == "/ask":
-            await self._reply(peer_id, "Диалог с ИИ подключу на следующем этапе. Пока доступны команды из /help.")
-        elif command == "/news":
-            await self._reply(peer_id, "Новостной монитор подключу на следующем этапе.")
         else:
             await self._reply(peer_id, "Неизвестная команда. /help — список команд.")
 
@@ -256,28 +313,214 @@ class BotHandlers:
         self.db.kv_set("chat_peer_id", str(peer_id))
         await self._reply(peer_id, "Беседа подключена. Сюда буду присылать портфель и алерты.")
 
+    async def _resolve_bond(self, isin: str) -> Bond | None:
+        isin = isin.upper()
+        bond = self.db.get_bond(isin)
+        if bond is not None and bond.duration_years is not None:
+            return bond
+        try:
+            async with SmartLabClient(self.settings) as client:
+                fetched, coupons = await client.fetch_detail(isin)
+            if fetched is not None:
+                self.db.upsert_bonds([fetched])
+                if coupons:
+                    self.db.upsert_coupons(coupons)
+                return fetched
+        except Exception as exc:
+            log.warning("bond %s fetch failed: %s", isin, exc)
+        return bond
+
     async def _bond(self, peer_id: int, argument: str) -> None:
         isin = argument.strip().upper()
         if not isin:
             await self._reply(peer_id, "Укажи ISIN: /bond RU000A10G1T5")
             return
-        bond = self.db.get_bond(isin)
-        if bond is None or bond.duration_years is None:
-            try:
-                async with SmartLabClient(self.settings) as client:
-                    bond, coupons = await client.fetch_detail(isin)
-                if bond is not None:
-                    self.db.upsert_bonds([bond])
-                    if coupons:
-                        self.db.upsert_coupons(coupons)
-            except Exception as exc:
-                log.warning("bond %s fetch failed: %s", isin, exc)
-                await self._reply(peer_id, f"Не удалось получить данные по {isin}.")
-                return
+        bond = await self._resolve_bond(isin)
         if bond is None:
-            await self._reply(peer_id, f"Не удалось разобрать карточку {isin}.")
+            await self._reply(peer_id, f"Не удалось получить данные по {isin}.")
             return
         await self._reply(peer_id, format_bond(bond))
+
+    async def _value(self, peer_id: int, argument: str) -> None:
+        isin = argument.strip().upper()
+        if not isin:
+            await self._reply(peer_id, "Укажи ISIN: /value RU000A10G1T5")
+            return
+        bond = await self._resolve_bond(isin)
+        if bond is None:
+            await self._reply(peer_id, f"Нет данных по {isin}.")
+            return
+        snapshot = None
+        try:
+            snapshot = await self._key_rate_snapshot()
+        except Exception as exc:
+            log.warning("key rate for valuation failed: %s", exc)
+        valuation = value_bond(
+            bond,
+            key_rate_pct=snapshot.value_pct if snapshot else None,
+            coupons=self.db.coupons(isin),
+        )
+        await self._reply(peer_id, render_valuation(valuation))
+
+    async def _risk(self, peer_id: int, argument: str) -> None:
+        isin = argument.strip().upper()
+        snapshot = None
+        try:
+            snapshot = await self._key_rate_snapshot()
+        except Exception as exc:
+            log.warning("key rate for risk failed: %s", exc)
+        if isin:
+            bond = await self._resolve_bond(isin)
+            if bond is None:
+                await self._reply(peer_id, f"Нет данных по {isin}.")
+                return
+            assessment = assess_bond_risk(
+                bond, snapshot.value_pct if snapshot else None
+            )
+            await self._reply(peer_id, render_risk(assessment))
+            return
+        positions = self.db.positions()
+        bonds = {bond.isin: bond for bond in self.db.list_bonds()}
+        assessment = assess_portfolio_risk(
+            positions, bonds, snapshot.value_pct if snapshot else None
+        )
+        await self._reply(peer_id, render_risk(assessment))
+
+    async def _stress(self, peer_id: int, argument: str) -> None:
+        try:
+            delta = float((argument or "100").replace(",", "."))
+        except ValueError:
+            await self._reply(peer_id, "Укажи изменение ставки в б.п.: /stress 100")
+            return
+        delta = max(-500.0, min(500.0, delta))
+        positions = self.db.positions()
+        bonds = {bond.isin: bond for bond in self.db.list_bonds()}
+        result = stress_portfolio(positions, bonds, delta)
+        await self._reply(peer_id, render_stress(result))
+
+    async def _news(self, peer_id: int, argument: str) -> None:
+        isin = argument.strip().upper() or None
+        await self._reply(peer_id, build_news_digest(self.settings, self.db, isin=isin))
+
+    async def _new_issues(self, peer_id: int) -> None:
+        rows = self.db.recent_new_issues(days=30, limit=10)
+        if not rows:
+            await self._reply(peer_id, "Новых выпусков с рейтингом за 30 дней пока нет.")
+            return
+        lines = ["🆕 Новые выпуски", ""]
+        for row in rows:
+            lines.append(
+                f"• {row.get('name') or row['isin']} ({row['isin']}) — "
+                f"YTM {_num(row.get('ytm_pct'), '%')}, "
+                f"дюр. {_num(row.get('duration_years'))}, "
+                f"{row.get('rating') or '—'}"
+            )
+        await self._reply(peer_id, "\n".join(lines))
+
+    async def _ideas(self, peer_id: int) -> None:
+        try:
+            snapshot = await self._key_rate_snapshot()
+            ideas = build_ideas(self.settings, self.db, snapshot, limit=3)
+        except Exception as exc:
+            log.warning("ideas failed: %s", exc)
+            await self._reply(peer_id, f"Не удалось построить идеи: {exc}")
+            return
+        saved = save_ideas(self.db, ideas)
+        text = render_ideas(ideas, snapshot)
+        if saved:
+            text += f"\n\nВ журнал добавлено идей: {saved}."
+        await self._reply(peer_id, text)
+
+    async def _strategy(self, peer_id: int) -> None:
+        try:
+            snapshot = await self._key_rate_snapshot()
+            text = build_strategy_note(self.settings, self.db, snapshot)
+        except Exception as exc:
+            log.warning("strategy failed: %s", exc)
+            await self._reply(peer_id, f"Не удалось построить стратегию: {exc}")
+            return
+        await self._reply(peer_id, text)
+
+    async def _position(self, peer_id: int, argument: str) -> None:
+        parts = argument.split()
+        action = parts[0].lower() if parts else "list"
+        if action == "list" or not parts:
+            await self._reply(peer_id, format_portfolio(self.settings, self.db))
+            return
+        if action == "remove":
+            if len(parts) < 2:
+                await self._reply(peer_id, "Укажи ISIN: /position remove RU000A10G1T5")
+                return
+            isin = parts[1].upper()
+            self.db.remove_position(isin)
+            await self._reply(peer_id, f"Позиция {isin} удалена.")
+            return
+        if action != "add":
+            await self._reply(
+                peer_id,
+                "Команды: /position add ISIN кол-во цена_в_% | "
+                "/position remove ISIN | /position list",
+            )
+            return
+        if len(parts) < 4:
+            await self._reply(
+                peer_id,
+                "Формат: /position add RU000A10G1T5 100 99.5 — "
+                "количество и цена в % от номинала.",
+            )
+            return
+        isin = parts[1].upper()
+        try:
+            qty = float(parts[2].replace(",", "."))
+            buy_price = float(parts[3].replace(",", "."))
+        except ValueError:
+            await self._reply(peer_id, "Количество и цена должны быть числами.")
+            return
+        if qty <= 0 or buy_price <= 0:
+            await self._reply(peer_id, "Количество и цена должны быть больше нуля.")
+            return
+        bond = await self._resolve_bond(isin)
+        if bond is None:
+            await self._reply(peer_id, f"Нет данных по {isin}.")
+            return
+        current_price = bond.price_pct or buy_price
+        annual_coupon = (
+            bond.coupon_rub * bond.coupon_freq * qty
+            if bond.coupon_rub is not None and bond.coupon_freq is not None
+            else None
+        )
+        self.db.upsert_positions(
+            [
+                PortfolioPosition(
+                    isin=isin,
+                    name=bond.name,
+                    qty=qty,
+                    buy_price_pct=buy_price,
+                    current_price_pct=bond.price_pct,
+                    ytm_pct=bond.ytm_pct,
+                    rating=bond.rating,
+                    g_spread_bp=bond.g_spread_bp,
+                    coupon_rub=bond.coupon_rub,
+                    coupon_freq=bond.coupon_freq,
+                    annual_coupon_rub=annual_coupon,
+                    current_value_rub=qty * current_price / 100 * 1000,
+                    next_coupon_date=bond.next_coupon_date,
+                    source_url=bond.source_url,
+                )
+            ]
+        )
+        await self._reply(
+            peer_id,
+            f"Позиция добавлена: {bond.name} ({isin}) · {qty:g} шт. · "
+            f"покупка {buy_price:.2f}% · сейчас {current_price:.2f}%.",
+        )
+
+    async def _ask(self, peer_id: int, argument: str) -> None:
+        if not argument.strip():
+            await self._reply(peer_id, "Напиши вопрос: /ask что интересного в коридоре ставки?")
+            return
+        answer = await Assistant(self.settings, self.db).answer(argument)
+        await self._reply(peer_id, answer)
 
     async def _watch(self, peer_id: int, from_id: int, is_admin: bool, argument: str) -> None:
         parts = argument.split()

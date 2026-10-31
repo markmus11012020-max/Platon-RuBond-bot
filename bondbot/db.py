@@ -9,7 +9,7 @@ from typing import Any
 from bondbot.data.quality import BOND_LIMITS, sanitize_bond, sanitize_position
 from bondbot.models import Bond, Coupon, PortfolioPosition
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bonds (
@@ -125,6 +125,42 @@ CREATE TABLE IF NOT EXISTS new_issues (
 
 CREATE INDEX IF NOT EXISTS idx_new_issues_seen
     ON new_issues(first_seen DESC);
+
+CREATE TABLE IF NOT EXISTS news (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    published_at TEXT,
+    summary TEXT,
+    fetched_at TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
+    entities_json TEXT NOT NULL DEFAULT '[]',
+    relevance INTEGER NOT NULL DEFAULT 0,
+    importance INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_published
+    ON news(published_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS ideas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    isin TEXT NOT NULL,
+    name TEXT,
+    action TEXT NOT NULL DEFAULT 'watch',
+    thesis TEXT NOT NULL,
+    price_pct REAL,
+    ytm_pct REAL,
+    risks TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    closed_at TEXT,
+    outcome_pct REAL,
+    note TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_ideas_status
+    ON ideas(status, created_at DESC);
 """
 
 
@@ -215,6 +251,17 @@ class Database:
                 "ON new_issues(first_seen DESC)"
             )
             version = 3
+
+        if version < 4:
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_news_published "
+                "ON news(published_at DESC, id DESC)"
+            )
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ideas_status "
+                "ON ideas(status, created_at DESC)"
+            )
+            version = 4
 
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
@@ -661,3 +708,101 @@ class Database:
             (cutoff, max(1, limit)),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def save_news(self, items: list[dict[str, Any]]) -> int:
+        saved = 0
+        now = datetime.now(timezone.utc).isoformat()
+        with self.conn:
+            for item in items:
+                cursor = self.conn.execute(
+                    "INSERT OR IGNORE INTO news "
+                    "(source, title, url, published_at, summary, fetched_at, hash, "
+                    "entities_json, relevance, importance) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        item.get("source", ""),
+                        item.get("title", ""),
+                        item.get("url", ""),
+                        item.get("published_at"),
+                        item.get("summary", ""),
+                        now,
+                        item["hash"],
+                        json.dumps(item.get("entities", []), ensure_ascii=False),
+                        int(item.get("relevance", 0)),
+                        int(item.get("importance", 0)),
+                    ),
+                )
+                saved += 1 if cursor.rowcount else 0
+        return saved
+
+    def recent_news(self, hours: int = 24, limit: int = 50) -> list[dict[str, Any]]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max(1, hours))).isoformat()
+        rows = self.conn.execute(
+            "SELECT id, source, title, url, published_at, summary, "
+            "entities_json, relevance, importance "
+            "FROM news WHERE published_at IS NULL OR published_at >= ? "
+            "ORDER BY relevance DESC, importance DESC, published_at DESC LIMIT ?",
+            (cutoff, max(1, limit)),
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["entities"] = json.loads(item.pop("entities_json"))
+            except json.JSONDecodeError:
+                item["entities"] = []
+            result.append(item)
+        return result
+
+    def news_count(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) AS count FROM news").fetchone()
+        return int(row["count"]) if row else 0
+
+    def create_idea(
+        self,
+        *,
+        isin: str,
+        name: str | None,
+        thesis: str,
+        action: str = "watch",
+        price_pct: float | None = None,
+        ytm_pct: float | None = None,
+        risks: str = "",
+        note: str = "",
+        created_at: datetime | None = None,
+    ) -> int:
+        payload = (created_at or datetime.now(timezone.utc)).isoformat()
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO ideas "
+                "(created_at, isin, name, action, thesis, price_pct, ytm_pct, risks, note) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (payload, isin.upper(), name, action, thesis, price_pct, ytm_pct, risks, note),
+            )
+        return int(cursor.lastrowid or 0)
+
+    def ideas(self, limit: int = 20, status: str | None = None) -> list[dict[str, Any]]:
+        if status:
+            rows = self.conn.execute(
+                "SELECT * FROM ideas WHERE status = ? ORDER BY id DESC LIMIT ?",
+                (status, max(1, limit)),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM ideas ORDER BY id DESC LIMIT ?",
+                (max(1, limit),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def close_idea(self, idea_id: int, outcome_pct: float | None, note: str = "") -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE ideas SET status = 'closed', closed_at = ?, "
+                "outcome_pct = ?, note = ? WHERE id = ?",
+                (
+                    datetime.now(timezone.utc).isoformat(),
+                    outcome_pct,
+                    note,
+                    idea_id,
+                ),
+            )

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from bondbot.analytics.risk import RiskAssessment, StressResult
 from bondbot.models import to_msk
 from bondbot.strategy.types import (
     AllocationResult,
+    BondValuation,
     ExitPlanResult,
     SafeListResult,
 )
@@ -104,6 +106,67 @@ def render_exit_plan(result: ExitPlanResult) -> str:
     lines.append("")
     lines.append(f"Аудит: id {result.audit_id} · {_dt(result.generated_at)}")
     lines.append("Не рекомендация.")
+    return _short("\n".join(lines))
+
+
+def render_risk(result: RiskAssessment) -> str:
+    icons = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🟠", "CRITICAL": "🔴"}
+    lines = [
+        f"{icons.get(result.level, '•')} Риск: {result.name} ({result.isin})",
+        f"Оценка: {result.score:.0f}/100 · уровень {result.level}",
+    ]
+    if result.factors:
+        lines.append("")
+        lines.append("Факторы:")
+        for factor in sorted(result.factors, key=lambda item: item.score, reverse=True):
+            lines.append(
+                f"• {factor.name}: {factor.score:.0f}/100 (вес {factor.weight:.0%}) — {factor.note}"
+            )
+    if result.warnings:
+        lines.append("")
+        lines.append("Предупреждения:")
+        lines.extend(f"• {warning}" for warning in result.warnings[:10])
+    lines.append("")
+    lines.append("Оценка выше = риск выше. Это аналитика, не рекомендация.")
+    return _short("\n".join(lines))
+
+
+def render_stress(result: StressResult) -> str:
+    lines = [
+        f"📉 Стресс-тест: ставка {result.delta_bp:+.0f} б.п.",
+        f"Текущая стоимость: {_money(result.current_value_rub)}",
+        f"Влияние: {_money(result.impact_rub)}",
+        f"Новая стоимость: {_money(result.new_value_rub)}",
+        f"Годовой купон: {_money(result.annual_income_rub)}",
+    ]
+    if result.notes:
+        lines.append("")
+        lines.append("Заметки:")
+        lines.extend(f"• {note}" for note in result.notes[:8])
+    lines.append("")
+    lines.append("Оценка по модифицированной дюрации; фактический результат может отличаться.")
+    return _short("\n".join(lines))
+
+
+def render_valuation(result: BondValuation) -> str:
+    lines = [
+        f"📐 {result.name} ({result.isin})",
+        f"YTM: {_pct(result.ytm_pct, 2)} · после налога: {_pct(result.after_tax_ytm_pct, 2)}",
+        f"Дюрация: {_num(result.duration_years)} лет · модифицированная: {_num(result.modified_duration)}",
+        f"G-спред: {_num(result.g_spread_bp, ' б.п.', 0)} · Z-спред: {_num(result.z_spread_bp, ' б.п.', 1)}",
+        f"Carry: {_num(result.carry_pct, ' п.п.')}",
+        f"Налог: {result.tax_rate:.0%}",
+    ]
+    if result.warnings:
+        lines.append("")
+        lines.append("Предупреждения:")
+        lines.extend(f"• {warning}" for warning in result.warnings[:8])
+    if result.formulas:
+        lines.append("")
+        lines.append("Формулы:")
+        lines.extend(f"• {formula}" for formula in result.formulas[:6])
+    lines.append("")
+    lines.append("Не индивидуальная инвестиционная рекомендация.")
     return _short("\n".join(lines))
 
 
