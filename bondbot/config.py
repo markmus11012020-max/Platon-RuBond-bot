@@ -93,6 +93,11 @@ class Settings:
     news_interval_minutes: int = 30
     news_hours: int = 24
 
+    # Live web search for issuer/news queries
+    live_search_enabled: bool = True
+    live_search_timeout: int = 15
+    live_search_ttl_hours: int = 6
+
     # LLM assistant
     llm_enabled: bool = True
     llm_max_tool_rounds: int = 4
@@ -171,6 +176,9 @@ def load_settings() -> Settings:
         news_feeds=_env("BONDBOT_NEWS_FEEDS"),
         news_interval_minutes=_int("BONDBOT_NEWS_INTERVAL_MINUTES", 30),
         news_hours=_int("BONDBOT_NEWS_HOURS", 24),
+        live_search_enabled=_bool("BONDBOT_LIVE_SEARCH_ENABLED", True),
+        live_search_timeout=_int("BONDBOT_LIVE_SEARCH_TIMEOUT", 15),
+        live_search_ttl_hours=_int("BONDBOT_LIVE_SEARCH_TTL_HOURS", 6),
         llm_enabled=_bool("BONDBOT_LLM_ENABLED", True),
         llm_max_tool_rounds=_int("BONDBOT_LLM_MAX_TOOL_ROUNDS", 4),
         llm_max_tokens=_int("BONDBOT_LLM_MAX_TOKENS", 900),

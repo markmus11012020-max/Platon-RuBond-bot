@@ -20,8 +20,9 @@ from bondbot.config import Settings
 from bondbot.db import Database
 from bondbot.models import ScreenFilters, utcnow
 from bondbot.services.ideas import build_ideas
-from bondbot.services.issuer import issuer_payload
+from bondbot.services.issuer import enrich_issuer_payload, issuer_payload
 from bondbot.services.news import build_news_digest
+from bondbot.services.websearch import live_search
 from bondbot.strategy.safe import build_safe_list
 from bondbot.strategy.valuation import value_bond
 
@@ -371,11 +372,12 @@ class Assistant:
         if not name:
             return {"error": "не указано название эмитента"}
         snapshot = await self._snapshot()
-        return issuer_payload(
+        payload = issuer_payload(
             self.db,
             name,
             key_rate_pct=snapshot.value_pct if snapshot else None,
         )
+        return await enrich_issuer_payload(self.settings, self.db, payload, name)
 
     async def _tool_screen(self, arguments: dict[str, Any]) -> Any:
         snapshot = await self._snapshot()
@@ -490,16 +492,25 @@ class Assistant:
         query = str(arguments.get("query") or "").strip()
         if query:
             items = self.db.search_news(query, limit=int(arguments.get("limit") or 8))
+            if not items:
+                items = await live_search(
+                    self.settings,
+                    self.db,
+                    query,
+                    limit=int(arguments.get("limit") or 8),
+                    ttl_hours=self.settings.live_search_ttl_hours,
+                )
             return {
                 "query": query,
                 "items": [
                     {
-                        "source": item["source"],
-                        "title": item["title"],
-                        "url": item["url"],
-                        "published_at": item["published_at"],
-                        "summary": (item.get("summary") or "")[:500],
+                        "source": item.get("source"),
+                        "title": item.get("title"),
+                        "url": item.get("url"),
+                        "published_at": item.get("published_at"),
+                        "summary": (item.get("summary") or item.get("snippet") or "")[:500],
                         "entities": item.get("entities") or [],
+                        "live": bool(item.get("live")),
                     }
                     for item in items
                 ],

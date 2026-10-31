@@ -5,8 +5,10 @@ from datetime import datetime
 from typing import Any
 
 from bondbot.analytics.risk import assess_bond_risk
+from bondbot.config import Settings
 from bondbot.db import Database
 from bondbot.models import Bond, to_msk
+from bondbot.services.websearch import live_search
 from bondbot.strategy.valuation import value_bond
 
 
@@ -66,6 +68,37 @@ def issuer_payload(
     return {"query": query, "bonds": bond_rows, "news": news[:8]}
 
 
+async def enrich_issuer_payload(
+    settings: Settings,
+    db: Database,
+    payload: dict[str, Any],
+    query: str,
+) -> dict[str, Any]:
+    """Добавляет живой поиск, если в RSS-базе мало свежих материалов."""
+    if not settings.live_search_enabled or len(payload.get("news") or []) >= 2:
+        return payload
+    results = await live_search(
+        settings,
+        db,
+        f"{query} облигации новости",
+        limit=6,
+        ttl_hours=settings.live_search_ttl_hours,
+    )
+    if not results:
+        return payload
+    news = list(payload.get("news") or [])
+    seen = {str(item.get("url") or "") for item in news}
+    for item in results:
+        url = str(item.get("url") or "")
+        if url and url in seen:
+            continue
+        seen.add(url)
+        news.append(item)
+    payload["news"] = news[:10]
+    payload["live_search"] = True
+    return payload
+
+
 def _pct(value: float | None) -> str:
     return f"{value:.2f}%" if value is not None else "—"
 
@@ -112,6 +145,8 @@ def render_issuer(payload: dict[str, Any]) -> str:
             except ValueError:
                 stamp = None
             when = f" · {stamp:%d.%m %H:%M}" if stamp else ""
+            if item.get("live"):
+                when = " · живой поиск"
             lines.append(f"• {item.get('title')} — {item.get('source')}{when}")
             if item.get("url"):
                 lines.append(f"   {item['url']}")
@@ -123,4 +158,4 @@ def render_issuer(payload: dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-__all__ = ["issuer_payload", "render_issuer"]
+__all__ = ["enrich_issuer_payload", "issuer_payload", "render_issuer"]

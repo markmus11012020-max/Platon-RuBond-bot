@@ -14,6 +14,7 @@
 - скоринг стабильности, YTM после налога, модифицированная дюрация, G/Z-спред, carry;
 - риск-скор, стресс-тест по ставке, новые выпуски, журнал идей и стратегия недели;
 - RSS-новости (Интерфакс, РБК, Коммерсантъ, Ведомости, Banki.ru, smart-lab) с привязкой к бумагам;
+- живой поиск по эмитенту, если в RSS нет свежих материалов (DuckDuckGo HTML, кэш 6 часов);
 - ИИ-ассистент `/ask` с инструментами (числа берутся из БД, не из LLM);
 - CLI для проверки данных без VK.
 
@@ -74,6 +75,7 @@
 - `BONDBOT_POSITION_SIZE_RUB`, `BONDBOT_MAX_PCT_DAILY_VOLUME`, `BONDBOT_EXIT_HORIZON_DAYS`
 - `BONDBOT_SCHEDULER_ENABLED`, `BONDBOT_REFRESH_HOUR`, `BONDBOT_ALERTS_ENABLED`, `BONDBOT_OWNER_PEER_ID`
 - `BONDBOT_NEWS_ENABLED`, `BONDBOT_NEWS_FEEDS`, `BONDBOT_NEWS_INTERVAL_MINUTES`
+- `BONDBOT_LIVE_SEARCH_ENABLED`, `BONDBOT_LIVE_SEARCH_TIMEOUT`, `BONDBOT_LIVE_SEARCH_TTL_HOURS`
 - `BONDBOT_LLM_ENABLED`, `BONDBOT_OPENAI_BASE_URL`, `BONDBOT_OPENAI_API_KEY`, `BONDBOT_OPENAI_MODEL`
 
 ## Деплой

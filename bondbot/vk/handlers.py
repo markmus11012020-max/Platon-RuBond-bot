@@ -21,7 +21,11 @@ from bondbot.services.ideas import (
     render_journal,
     save_ideas,
 )
-from bondbot.services.issuer import issuer_payload, render_issuer
+from bondbot.services.issuer import (
+    enrich_issuer_payload,
+    issuer_payload,
+    render_issuer,
+)
 from bondbot.services.news import build_news_digest
 from bondbot.services.relative import build_relative_value
 from bondbot.services.review import build_portfolio_review, build_what_changed
@@ -415,6 +419,7 @@ class BotHandlers:
                 name,
                 key_rate_pct=snapshot.value_pct if snapshot else None,
             )
+            payload = await enrich_issuer_payload(self.settings, self.db, payload, name)
         except Exception as exc:
             log.warning("issuer overview failed: %s", exc)
             await self._reply(peer_id, f"Не удалось собрать обзор эмитента: {exc}")
