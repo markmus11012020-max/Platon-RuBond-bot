@@ -14,6 +14,7 @@ from bondbot.db import Database
 from bondbot.models import MSK
 from bondbot.services.alerts import build_and_send, owner_peer
 from bondbot.services.backup import backup_database
+from bondbot.services.broker_sync import BrokerSyncResult, sync_broker
 from bondbot.services.digest import build_digest
 from bondbot.services.ideas import build_strategy_note
 from bondbot.services.news import build_news_digest, refresh_news
@@ -117,6 +118,18 @@ class BotScheduler:
                 coalesce=True,
                 max_instances=1,
                 misfire_grace_time=3600,
+            )
+        if self.settings.broker_sync_enabled and self.settings.tinvest_token:
+            self.scheduler.add_job(
+                self._broker,
+                IntervalTrigger(
+                    minutes=max(5, self.settings.broker_sync_interval_minutes),
+                ),
+                id="broker_sync",
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                next_run_time=datetime.now(MSK) + timedelta(seconds=90),
             )
         self.scheduler.start()
         log.info("scheduler started: market=%02d:%02d detail=%02d:%02d digest=%02d:%02d",
@@ -232,6 +245,22 @@ class BotScheduler:
             return {"path": str(path)}
 
         await self._run("backup", run)
+
+    async def _broker(self) -> None:
+        async def run() -> dict[str, Any]:
+            result: BrokerSyncResult = await sync_broker(
+                self.settings,
+                self.db,
+                "tinvest",
+            )
+            return {
+                "broker": result.broker,
+                "account_id": result.account_id,
+                "positions": result.positions,
+                "warnings": list(result.warnings),
+            }
+
+        await self._run("broker_sync", run)
 
 
 __all__ = ["BotScheduler"]

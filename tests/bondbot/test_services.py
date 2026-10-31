@@ -219,3 +219,35 @@ def test_scheduler_records_job(tmp_path) -> None:
         assert job["details"] == {"ok": True}
     finally:
         db.close()
+
+
+def test_scheduler_broker_sync_records_positions(tmp_path, monkeypatch) -> None:
+    from bondbot.services.broker_sync import BrokerSyncResult
+
+    async def fake_sync(*args, **kwargs):
+        return BrokerSyncResult(
+            broker="tinvest",
+            account_id="ACC1",
+            account_name="Основной",
+            positions=3,
+            warnings=("нет ISIN",),
+        )
+
+    monkeypatch.setattr("bondbot.services.scheduler.sync_broker", fake_sync)
+    db = Database(str(tmp_path / "broker-jobs.db"))
+    settings = replace(
+        load_settings(),
+        scheduler_enabled=False,
+        broker_sync_enabled=True,
+        tinvest_token="test-token",
+    )
+    scheduler = BotScheduler(settings, db, FakeVk())  # type: ignore[arg-type]
+    try:
+        asyncio.run(scheduler._broker())
+        job = db.last_jobs(1)[0]
+        assert job["name"] == "broker_sync"
+        assert job["status"] == "ok"
+        assert job["details"]["positions"] == 3
+        assert job["details"]["warnings"] == ["нет ISIN"]
+    finally:
+        db.close()

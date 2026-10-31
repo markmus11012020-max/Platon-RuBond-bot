@@ -597,3 +597,100 @@ def test_smart_commands_reply(db: Database) -> None:
         )
     )
     assert "удалена" in vk.sent[-1]["message"]
+
+
+def test_broker_status_admin_only(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    member_id = ADMIN_ID + 7
+    vk.members.add(member_id)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": member_id,
+                        "text": "/broker",
+                    }
+                },
+            }
+        )
+    )
+    assert "администратору" in vk.sent[-1]["message"]
+
+
+def test_broker_status_shows_integrations(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/broker status",
+                    }
+                },
+            }
+        )
+    )
+    message = vk.sent[-1]["message"]
+    assert "T-Invest" in message
+    assert "СберИнвестиции" in message
+    assert "Автосинк" in message
+
+
+def test_broker_sber_sync_explains_no_api(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/broker sync sber",
+                    }
+                },
+            }
+        )
+    )
+    assert "нет публичного API" in vk.sent[-1]["message"]
+    assert "брокерского отчёта" in vk.sent[-1]["message"]
+
+
+def test_broker_sync_tinvest_replies_with_portfolio(db: Database, monkeypatch) -> None:
+    from bondbot.services.broker_sync import BrokerSyncResult
+
+    handlers, vk = _owner_handlers(db)
+    handlers.settings = replace(handlers.settings, tinvest_token="test-token")
+
+    async def fake_sync(*args, **kwargs):
+        return BrokerSyncResult(
+            broker="tinvest",
+            account_id="ACC1",
+            account_name="Основной",
+            positions=2,
+        )
+
+    monkeypatch.setattr("bondbot.vk.handlers.sync_broker", fake_sync)
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/broker sync tinvest",
+                    }
+                },
+            }
+        )
+    )
+    assert "портфель синхронизирован" in vk.sent[-2]["message"]
+    assert "Бумажный портфель" in vk.sent[-1]["message"]
+

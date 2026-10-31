@@ -17,6 +17,8 @@ from bondbot.analytics.presets import PRESET_LABELS, preset_filters, preset_name
 from bondbot.analytics.query import parse_screen_query
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.analytics.risk import assess_bond_risk, assess_portfolio_risk, stress_portfolio
+from bondbot.brokers.base import BrokerUnsupportedError
+from bondbot.brokers.tinvest import TInvestClient
 from bondbot.config import Settings
 from bondbot.data.smartlab import SmartLabClient
 from bondbot.db import Database
@@ -24,6 +26,7 @@ from bondbot.importers.smartlab_portfolio import import_portfolio_html
 from bondbot.knowledge import format_topic
 from bondbot.models import Bond, PortfolioPosition, ScreenFilters, now_msk, to_msk
 from bondbot.services.assistant import Assistant
+from bondbot.services.broker_sync import format_broker_sync, sync_broker
 from bondbot.services.ideas import (
     build_ideas,
     build_strategy_note,
@@ -83,8 +86,9 @@ ADMIN_HELP_TEXT = HELP_TEXT + """
 
 Админ-команды:
 /portfolio, /position, /watch, /exit, /alloc, /stress, /strategy, /calendar,
-/doctor, /whatsnew, /journal, /connect
+/doctor, /whatsnew, /journal, /connect, /broker
 
+Брокеры: /broker status · /broker accounts · /broker sync tinvest.
 Обновить портфель: отправь боту файл portfolio.html из Smart-Lab
 или /portfolio url <прямая ссылка на html>."""
 
@@ -143,7 +147,16 @@ ADMIN_ONLY = {
     "/whatsnew",
     "/journal",
     "/connect",
+    "/broker",
 }
+
+_SBER_UNSUPPORTED = (
+    "У СберИнвестиций нет публичного API для брокерских счетов физлиц. "
+    "Подключить счёт по API нельзя; официальный Sber API предназначен для "
+    "бизнес-сценариев, а не для портфеля частного инвестора. "
+    "Рабочий вариант — импорт брокерского отчёта Сбера. "
+    "T-Invest API поддерживается полностью: /broker sync tinvest."
+)
 
 
 def _money(value: float | None) -> str:
@@ -525,6 +538,8 @@ class BotHandlers:
                 )
         elif command == "/connect":
             await self._connect(peer_id, is_admin, is_chat)
+        elif command == "/broker":
+            await self._broker(peer_id, argument)
         elif command == "/portfolio":
             command_argument = argument.strip()
             if command_argument.lower().startswith("url "):
@@ -699,6 +714,91 @@ class BotHandlers:
             return
         self.db.kv_set("chat_peer_id", str(peer_id))
         await self._reply(peer_id, "Беседа подключена. Сюда буду присылать портфель и алерты.")
+
+    async def _broker(self, peer_id: int, argument: str) -> None:
+        parts = argument.split()
+        action = parts[0].lower() if parts else "status"
+        broker = parts[1].lower() if len(parts) > 1 else "tinvest"
+
+        if action in {"status", "статус"}:
+            lines = [
+                "🏦 Брокерские интеграции (read-only)",
+                "T-Invest: "
+                + ("токен задан" if self.settings.tinvest_token else "токен не задан"),
+                "Счёт T-Invest: "
+                + (self.settings.tinvest_account_id or "первый открытый"),
+                "Автосинк: "
+                + ("вкл" if self.settings.broker_sync_enabled else "выкл")
+                + f" · каждые {self.settings.broker_sync_interval_minutes} мин",
+                "СберИнвестиции: официального API для счетов физлиц нет",
+                "",
+                "/broker accounts — счета T-Invest",
+                "/broker sync tinvest — обновить портфель из T-Invest",
+                "",
+                "Интеграция только читает данные и не выставляет заявки.",
+            ]
+            await self._reply(peer_id, "\n".join(lines))
+            return
+
+        if action in {"accounts", "счета"}:
+            if broker == "sber":
+                await self._reply(peer_id, _SBER_UNSUPPORTED)
+                return
+            client = TInvestClient(self.settings)
+            try:
+                accounts = await client.accounts()
+            except Exception as exc:
+                log.warning("broker accounts failed: %s", exc)
+                await self._reply(peer_id, f"Не удалось получить счета T-Invest: {exc}")
+                return
+            finally:
+                await client.close()
+            if not accounts:
+                await self._reply(peer_id, "T-Invest не вернул ни одного счёта.")
+                return
+            lines = ["🏦 Счета T-Invest:"]
+            for account in accounts:
+                lines.append(
+                    f"• {account.name}\n"
+                    f"  id: {account.id}\n"
+                    f"  {account.type} · {account.status}"
+                )
+            await self._reply(peer_id, "\n".join(lines))
+            return
+
+        if action in {"sync", "обновить"}:
+            if broker == "sber":
+                await self._reply(peer_id, _SBER_UNSUPPORTED)
+                return
+            if broker != "tinvest":
+                await self._reply(peer_id, "Поддерживается: /broker sync tinvest")
+                return
+            if not self.settings.tinvest_token:
+                await self._reply(
+                    peer_id,
+                    "T-Invest не настроен: задай BONDBOT_TINVEST_TOKEN "
+                    "(и при необходимости BONDBOT_TINVEST_ACCOUNT_ID).",
+                )
+                return
+            await self._reply(peer_id, "Синхронизирую портфель T-Invest...")
+            try:
+                result = await sync_broker(self.settings, self.db, "tinvest")
+            except BrokerUnsupportedError as exc:
+                await self._reply(peer_id, str(exc))
+                return
+            except Exception as exc:
+                log.warning("broker sync failed: %s", exc)
+                await self._reply(peer_id, f"Синхронизация T-Invest не удалась: {exc}")
+                return
+            await self._reply(peer_id, format_broker_sync(result))
+            if result.positions:
+                await self._reply(peer_id, format_portfolio(self.settings, self.db))
+            return
+
+        await self._reply(
+            peer_id,
+            "Команды: /broker status · /broker accounts · /broker sync tinvest",
+        )
 
     async def _resolve_bond(self, isin: str) -> Bond | None:
         isin = isin.upper()

@@ -11,6 +11,9 @@ from bondbot.analytics.bonds import (
     required_daily_volume_mn,
     screen_bonds,
 )
+from bondbot.brokers.base import BrokerUnsupportedError
+from bondbot.brokers.tinvest import TInvestClient
+from bondbot.services.broker_sync import format_broker_sync, sync_broker
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.config import load_settings
 from bondbot.data.cbr import KeyRateService
@@ -110,6 +113,53 @@ async def cmd_digest(args: argparse.Namespace, db: Database) -> None:
 async def cmd_repair(args: argparse.Namespace, db: Database) -> None:
     repaired = db.repair_bond_data()
     print(f"Очищено бумаг с битыми полями: {repaired}")
+
+
+async def cmd_broker(args: argparse.Namespace, db: Database) -> None:
+    settings = load_settings()
+    broker_name = (args.broker or "tinvest").lower()
+    if args.action == "status":
+        print(f"Брокер: {broker_name}")
+        if broker_name == "tinvest":
+            print(f"Токен T-Invest: {'задан' if settings.tinvest_token else 'не задан'}")
+            print(f"Счёт: {settings.tinvest_account_id or 'первый открытый'}")
+            print(f"Автосинк: {'вкл' if settings.broker_sync_enabled else 'выкл'}")
+        else:
+            print("Сбер: публичного API для брокерских счетов физлиц нет")
+        return
+    if args.action == "accounts":
+        if broker_name != "tinvest":
+            print("Счёт Сбера через API недоступен: нет публичного API для физлиц.")
+            return
+        client = TInvestClient(settings)
+        try:
+            accounts = await client.accounts()
+        except Exception as exc:
+            print(f"Не удалось получить счета: {exc}")
+            return
+        finally:
+            await client.close()
+        if not accounts:
+            print("Счетов нет")
+            return
+        for account in accounts:
+            print(f"{account.id}\t{account.name}\t{account.type}\t{account.status}")
+        return
+    try:
+        result = await sync_broker(
+            settings,
+            db,
+            broker_name,
+            account_id=args.account,
+        )
+    except BrokerUnsupportedError as exc:
+        print(str(exc))
+        return
+    except Exception as exc:
+        print(f"Синхронизация не удалась: {exc}")
+        return
+    print(format_broker_sync(result))
+    await cmd_portfolio(args, db)
 
 
 async def cmd_jobs(args: argparse.Namespace, db: Database) -> None:
@@ -378,6 +428,8 @@ async def async_main(args: argparse.Namespace) -> None:
             await cmd_digest(args, db)
         elif args.command == "jobs":
             await cmd_jobs(args, db)
+        elif args.command == "broker":
+            await cmd_broker(args, db)
         elif args.command == "repair":
             await cmd_repair(args, db)
         elif args.command == "bond":
@@ -422,6 +474,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     jobs = sub.add_parser("jobs", help="show recent background jobs")
     jobs.add_argument("--limit", type=int, default=10)
+
+    broker = sub.add_parser("broker", help="read-only broker sync")
+    broker.add_argument("action", choices=["accounts", "sync", "status"])
+    broker.add_argument("--broker", default="tinvest", choices=["tinvest", "sber"])
+    broker.add_argument("--account", default=None)
 
     sub.add_parser("repair", help="clean legacy invalid numeric fields")
 

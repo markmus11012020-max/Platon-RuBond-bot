@@ -216,6 +216,60 @@ def _row_to_bond(row: sqlite3.Row) -> Bond:
     return Bond(**{key: value for key, value in data.items() if key in Bond.__dataclass_fields__})
 
 
+_POSITION_UPSERT = """
+INSERT INTO positions (
+    isin, name, qty, buy_price_pct, current_price_pct, ytm_pct, rating,
+    g_spread_bp, coupon_rub, coupon_freq, annual_coupon_rub, current_value_rub,
+    next_coupon_date, source_url, updated_at
+) VALUES (
+    :isin, :name, :qty, :buy_price_pct, :current_price_pct, :ytm_pct, :rating,
+    :g_spread_bp, :coupon_rub, :coupon_freq, :annual_coupon_rub, :current_value_rub,
+    :next_coupon_date, :source_url, :updated_at
+)
+ON CONFLICT(isin) DO UPDATE SET
+    name = excluded.name,
+    qty = excluded.qty,
+    buy_price_pct = COALESCE(excluded.buy_price_pct, positions.buy_price_pct),
+    current_price_pct = COALESCE(excluded.current_price_pct, positions.current_price_pct),
+    ytm_pct = COALESCE(excluded.ytm_pct, positions.ytm_pct),
+    rating = COALESCE(excluded.rating, positions.rating),
+    g_spread_bp = COALESCE(excluded.g_spread_bp, positions.g_spread_bp),
+    coupon_rub = COALESCE(excluded.coupon_rub, positions.coupon_rub),
+    coupon_freq = COALESCE(excluded.coupon_freq, positions.coupon_freq),
+    annual_coupon_rub = COALESCE(excluded.annual_coupon_rub, positions.annual_coupon_rub),
+    current_value_rub = COALESCE(excluded.current_value_rub, positions.current_value_rub),
+    next_coupon_date = COALESCE(excluded.next_coupon_date, positions.next_coupon_date),
+    source_url = excluded.source_url,
+    updated_at = excluded.updated_at
+"""
+
+
+def _position_rows(positions: list[PortfolioPosition]) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc).isoformat()
+    rows: list[dict[str, Any]] = []
+    for position in (sanitize_position(item) for item in positions):
+        rows.append(
+            {
+                "isin": position.isin,
+                "name": position.name,
+                "qty": position.qty,
+                "buy_price_pct": position.buy_price_pct,
+                "current_price_pct": position.current_price_pct,
+                "ytm_pct": position.ytm_pct,
+                "rating": position.rating,
+                "g_spread_bp": position.g_spread_bp,
+                "coupon_rub": position.coupon_rub,
+                "coupon_freq": position.coupon_freq,
+                "annual_coupon_rub": position.annual_coupon_rub,
+                "current_value_rub": position.current_value_rub,
+                "next_coupon_date": _date_iso(position.next_coupon_date),
+                "source_url": position.source_url,
+                "updated_at": now,
+            }
+        )
+    return rows
+
+
 class Database:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -451,56 +505,16 @@ class Database:
         return [dict(row) for row in rows]
 
     def upsert_positions(self, positions: list[PortfolioPosition]) -> int:
-        query = """
-        INSERT INTO positions (
-            isin, name, qty, buy_price_pct, current_price_pct, ytm_pct, rating,
-            g_spread_bp, coupon_rub, coupon_freq, annual_coupon_rub, current_value_rub,
-            next_coupon_date, source_url, updated_at
-        ) VALUES (
-            :isin, :name, :qty, :buy_price_pct, :current_price_pct, :ytm_pct, :rating,
-            :g_spread_bp, :coupon_rub, :coupon_freq, :annual_coupon_rub, :current_value_rub,
-            :next_coupon_date, :source_url, :updated_at
-        )
-        ON CONFLICT(isin) DO UPDATE SET
-            name = excluded.name,
-            qty = excluded.qty,
-            buy_price_pct = COALESCE(excluded.buy_price_pct, positions.buy_price_pct),
-            current_price_pct = COALESCE(excluded.current_price_pct, positions.current_price_pct),
-            ytm_pct = COALESCE(excluded.ytm_pct, positions.ytm_pct),
-            rating = COALESCE(excluded.rating, positions.rating),
-            g_spread_bp = COALESCE(excluded.g_spread_bp, positions.g_spread_bp),
-            coupon_rub = COALESCE(excluded.coupon_rub, positions.coupon_rub),
-            coupon_freq = COALESCE(excluded.coupon_freq, positions.coupon_freq),
-            annual_coupon_rub = COALESCE(excluded.annual_coupon_rub, positions.annual_coupon_rub),
-            current_value_rub = COALESCE(excluded.current_value_rub, positions.current_value_rub),
-            next_coupon_date = COALESCE(excluded.next_coupon_date, positions.next_coupon_date),
-            source_url = excluded.source_url,
-            updated_at = excluded.updated_at
-        """
-        rows = []
-        now = datetime.now(timezone.utc).isoformat()
-        for position in (sanitize_position(item) for item in positions):
-            rows.append(
-                {
-                    "isin": position.isin,
-                    "name": position.name,
-                    "qty": position.qty,
-                    "buy_price_pct": position.buy_price_pct,
-                    "current_price_pct": position.current_price_pct,
-                    "ytm_pct": position.ytm_pct,
-                    "rating": position.rating,
-                    "g_spread_bp": position.g_spread_bp,
-                    "coupon_rub": position.coupon_rub,
-                    "coupon_freq": position.coupon_freq,
-                    "annual_coupon_rub": position.annual_coupon_rub,
-                    "current_value_rub": position.current_value_rub,
-                    "next_coupon_date": _date_iso(position.next_coupon_date),
-                    "source_url": position.source_url,
-                    "updated_at": now,
-                }
-            )
+        rows = _position_rows(positions)
         with self.conn:
-            self.conn.executemany(query, rows)
+            self.conn.executemany(_POSITION_UPSERT, rows)
+        return len(rows)
+
+    def replace_positions(self, positions: list[PortfolioPosition]) -> int:
+        rows = _position_rows(positions)
+        with self.conn:
+            self.conn.execute("DELETE FROM positions")
+            self.conn.executemany(_POSITION_UPSERT, rows)
         return len(rows)
 
     def positions(self) -> list[PortfolioPosition]:

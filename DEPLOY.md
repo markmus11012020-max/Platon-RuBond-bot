@@ -75,6 +75,15 @@ docker compose -p platon-bond-bot -f docker-compose.bondbot.yml start
 - `BONDBOT_LLM_DAILY_TOKEN_LIMIT=500000` — лимит на пользователя в сутки.
 - Админские команды остаются только `BONDBOT_VK_ADMIN_USER_ID`.
 
+## Брокеры
+
+- T-Invest: задать `BONDBOT_TINVEST_TOKEN` (read-only токен) и при необходимости
+  `BONDBOT_TINVEST_ACCOUNT_ID`; проверить `python -m bondbot.cli broker accounts`,
+  затем `/broker sync tinvest` в VK или `python -m bondbot.cli broker sync`.
+- Автосинк: `BONDBOT_BROKER_SYNC_ENABLED=1`, интервал `BONDBOT_BROKER_SYNC_MINUTES`.
+- СберИнвестиции: официального API для брокерских счетов физлиц нет. Не добавлять
+  неофициальные/скрапинговые коннекторы; использовать импорт брокерского отчёта.
+
 ## Правила
 
 - Не выполнять `docker system prune`, не перезапускать `freelance-bot` и Caddy.

@@ -98,6 +98,17 @@ class Settings:
     live_search_timeout: int = 15
     live_search_ttl_hours: int = 6
 
+    # Broker integrations (read-only)
+    broker_sync_enabled: bool = False
+    broker_sync_interval_minutes: int = 30
+    broker_timeout: int = 30
+    tinvest_token: str = field(default="", repr=False)
+    tinvest_account_id: str = ""
+    tinvest_base_url: str = "https://invest-public-api.tbank.ru"
+    sber_token: str = field(default="", repr=False)
+    sber_account_id: str = ""
+    sber_base_url: str = ""
+
     # LLM assistant
     llm_enabled: bool = True
     llm_max_tool_rounds: int = 6
@@ -183,6 +194,18 @@ def load_settings() -> Settings:
         live_search_enabled=_bool("BONDBOT_LIVE_SEARCH_ENABLED", True),
         live_search_timeout=_int("BONDBOT_LIVE_SEARCH_TIMEOUT", 15),
         live_search_ttl_hours=_int("BONDBOT_LIVE_SEARCH_TTL_HOURS", 6),
+        broker_sync_enabled=_bool("BONDBOT_BROKER_SYNC_ENABLED", False),
+        broker_sync_interval_minutes=_int("BONDBOT_BROKER_SYNC_MINUTES", 30),
+        broker_timeout=_int("BONDBOT_BROKER_TIMEOUT", 30),
+        tinvest_token=_env("BONDBOT_TINVEST_TOKEN"),
+        tinvest_account_id=_env("BONDBOT_TINVEST_ACCOUNT_ID"),
+        tinvest_base_url=(
+            _env("BONDBOT_TINVEST_BASE_URL", "https://invest-public-api.tbank.ru")
+            or "https://invest-public-api.tbank.ru"
+        ).rstrip("/"),
+        sber_token=_env("BONDBOT_SBER_TOKEN"),
+        sber_account_id=_env("BONDBOT_SBER_ACCOUNT_ID"),
+        sber_base_url=_env("BONDBOT_SBER_BASE_URL").rstrip("/"),
         llm_enabled=_bool("BONDBOT_LLM_ENABLED", True),
         llm_max_tool_rounds=_int("BONDBOT_LLM_MAX_TOOL_ROUNDS", 6),
         llm_max_tokens=_int("BONDBOT_LLM_MAX_TOKENS", 1800),
