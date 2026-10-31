@@ -59,6 +59,32 @@ def test_assistant_tool_roundtrip(tmp_path) -> None:
         db.close()
 
 
+def test_assistant_uses_history(tmp_path) -> None:
+    db = Database(str(tmp_path / "assistant3.db"))
+    settings = replace(
+        load_settings(),
+        openai_api_key="test",
+        llm_enabled=True,
+        llm_max_tool_rounds=2,
+    )
+    client = FakeClient()
+    try:
+        answer = asyncio.run(
+            Assistant(settings, db, client=client).answer(
+                "а что с этой новостью?",
+                history=[
+                    {"role": "user", "content": "Техдефолт МГКЛ"},
+                    {"role": "assistant", "content": "Вижу новость про МГКЛ."},
+                ],
+            )
+        )
+        assert answer == "Идей пока нет."
+        messages = client.chat.completions.requests[0]["messages"]
+        assert any(message.get("content") == "Техдефолт МГКЛ" for message in messages)
+    finally:
+        db.close()
+
+
 def test_assistant_fallback_without_key(tmp_path) -> None:
     db = Database(str(tmp_path / "assistant2.db"))
     settings = replace(load_settings(), openai_api_key="", llm_enabled=True)

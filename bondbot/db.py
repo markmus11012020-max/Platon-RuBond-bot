@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -764,6 +765,35 @@ class Database:
             except json.JSONDecodeError:
                 item["entities"] = []
             result.append(item)
+        return result
+
+    def search_news(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        tokens = [
+            token
+            for token in re.split(r"[\s,.;:!?()\"']+", query.lower())
+            if len(token) >= 3
+        ][:6]
+        if not tokens:
+            return []
+        # SQLite lower() не умеет кириллицу, поэтому фильтруем в Python.
+        rows = self.conn.execute(
+            "SELECT id, source, title, url, published_at, summary, "
+            "entities_json, relevance, importance "
+            "FROM news ORDER BY published_at DESC LIMIT 3000"
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            haystack = f"{row['title']} {row['summary'] or ''}".lower()
+            if not any(token in haystack for token in tokens):
+                continue
+            item = dict(row)
+            try:
+                item["entities"] = json.loads(item.pop("entities_json"))
+            except json.JSONDecodeError:
+                item["entities"] = []
+            result.append(item)
+            if len(result) >= max(1, limit):
+                break
         return result
 
     def news_count(self) -> int:

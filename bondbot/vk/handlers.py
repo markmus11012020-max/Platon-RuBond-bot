@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date, datetime
@@ -63,7 +64,8 @@ HELP_TEXT = """Platon Bond Bot — аналитика облигаций РФ.
 /doctor — здоровье портфеля
 /whatsnew — что изменилось
 /position add ISIN кол-во цена | remove ISIN | list
-/ask вопрос — ИИ-аналитик
+/ask вопрос — ИИ-аналитик (или просто напиши вопрос текстом)
+/clear — очистить историю диалога
 /keyboard — показать кнопки
 /status — состояние данных
 /connect — подключить беседу (админ)
@@ -280,7 +282,8 @@ class BotHandlers:
         # "[club123|@club123] /help" или "@club123 /help".
         match = re.search(r"(?<!\S)/[A-Za-zА-Яа-я0-9_]+", text)
         if match is None:
-            await self._reply(peer_id, "Неизвестная команда. /help — список команд.")
+            # Любой обычный текст — это диалог с ИИ, а не команда.
+            await self._ask(peer_id, text)
             return
         command = match.group(0).lower().split("@")[0]
         argument = text[match.end():].strip()
@@ -342,6 +345,8 @@ class BotHandlers:
             await self._position(peer_id, argument)
         elif command == "/ask":
             await self._ask(peer_id, argument)
+        elif command in {"/clear", "/reset"}:
+            await self._clear_dialog(peer_id)
         elif command == "/watch":
             await self._watch(peer_id, from_id, is_admin, argument)
         elif command == "/status":
@@ -564,12 +569,48 @@ class BotHandlers:
             f"покупка {buy_price:.2f}% · сейчас {current_price:.2f}%.",
         )
 
+    def _dialog_key(self, peer_id: int) -> str:
+        return f"dialog:{peer_id}"
+
+    def _load_dialog(self, peer_id: int) -> list[dict[str, str]]:
+        raw = self.db.kv_get(self._dialog_key(peer_id))
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [
+            {"role": str(item.get("role")), "content": str(item.get("content"))}
+            for item in data
+            if isinstance(item, dict)
+        ][-12:]
+
+    def _save_dialog(self, peer_id: int, question: str, answer: str) -> None:
+        history = self._load_dialog(peer_id)
+        history.append({"role": "user", "content": question[:1500]})
+        history.append({"role": "assistant", "content": answer[:2000]})
+        self.db.kv_set(
+            self._dialog_key(peer_id),
+            json.dumps(history[-12:], ensure_ascii=False),
+        )
+
     async def _ask(self, peer_id: int, argument: str) -> None:
-        if not argument.strip():
+        question = argument.strip()
+        if not question:
             await self._reply(peer_id, "Напиши вопрос: /ask что интересного в коридоре ставки?")
             return
-        answer = await Assistant(self.settings, self.db).answer(argument)
+        history = self._load_dialog(peer_id)
+        answer = await Assistant(self.settings, self.db).answer(question, history=history)
+        if not answer.startswith(("Не удалось", "LLM не настроен")):
+            self._save_dialog(peer_id, question, answer)
         await self._reply(peer_id, answer)
+
+    async def _clear_dialog(self, peer_id: int) -> None:
+        self.db.kv_set(self._dialog_key(peer_id), "[]")
+        await self._reply(peer_id, "История диалога очищена.")
 
     async def _relative(self, peer_id: int, argument: str) -> None:
         try:

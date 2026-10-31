@@ -37,7 +37,9 @@
 `/portfolio`, `/bond ISIN`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`,
 `/risk [ISIN]`, `/stress [б.п.]`, `/news [ISIN]`, `/new`, `/idea`, `/journal`,
 `/strategy`, `/relative [ISIN]`, `/calendar [дней]`, `/doctor`, `/whatsnew`,
-`/position add|remove|list`, `/ask вопрос`, `/keyboard`, `/status`, `/help`.
+`/position add|remove|list`, `/ask вопрос`, `/clear`, `/keyboard`, `/status`, `/help`.
+
+Можно не писать `/ask`: любой обычный текст уходит в диалог с ИИ. Бот помнит последние сообщения (сброс — `/clear`).
 
 Бот приватный: команды принимаются только от владельца (`BONDBOT_VK_ADMIN_USER_ID`).
 

@@ -83,6 +83,21 @@ def test_news_storage_and_digest(tmp_path) -> None:
         assert db.save_news(items) == 2
         assert db.save_news(items) == 0
         assert db.news_count() == 2
+        db.save_news(
+            [
+                {
+                    "source": "Test",
+                    "title": "Техдефолт МГКЛ: что известно",
+                    "url": "https://example.com/news/3",
+                    "published_at": utcnow().isoformat(),
+                    "summary": "Эмитент допустил технический дефолт.",
+                    "hash": "tech-default-1",
+                }
+            ]
+        )
+        found = db.search_news("Техдефолт МГКЛ")
+        assert found
+        assert "МГКЛ" in found[0]["title"]
         digest = build_news_digest(settings, db, limit=1)
         assert "ЦБ сохранил ставку" in digest
         assert "портфель" in digest

@@ -181,6 +181,43 @@ def test_stranger_is_ignored(db: Database) -> None:
     assert vk.sent == []
 
 
+def test_free_text_goes_to_dialog(db: Database) -> None:
+    settings = replace(
+        load_settings(),
+        vk_admin_user_id=ADMIN_ID,
+        vk_group_token="test",
+        vk_group_id=1,
+        openai_api_key="",
+    )
+    vk = FakeVk()
+    handlers = BotHandlers(settings, db, vk)  # type: ignore[arg-type]
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "Техдефолт МГКЛ, расскажи про эту новость",
+                    }
+                },
+            }
+        )
+    )
+    assert "LLM не настроен" in vk.sent[-1]["message"]
+
+
+def test_dialog_history_roundtrip(db: Database) -> None:
+    handlers, _ = _owner_handlers(db)
+    handlers._save_dialog(ADMIN_ID, "вопрос", "ответ")
+    history = handlers._load_dialog(ADMIN_ID)
+    assert history[-2]["role"] == "user"
+    assert history[-1]["role"] == "assistant"
+    asyncio.run(handlers._clear_dialog(ADMIN_ID))
+    assert handlers._load_dialog(ADMIN_ID) == []
+
+
 def test_keyboard_mention_prefix_is_parsed(db: Database) -> None:
     handlers, vk = _owner_handlers(db)
     asyncio.run(
