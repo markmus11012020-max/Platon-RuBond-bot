@@ -266,6 +266,7 @@ async def send_pending_alerts(
         return 0
 
     current = now or utcnow()
+    db.expire_alerts(hours=48)
     quiet = _quiet_hour(settings, current)
     remaining = max(0, settings.alert_max_per_day - db.alerts_sent_today())
     if remaining <= 0:

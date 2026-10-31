@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 from bondbot.db import SCHEMA_VERSION, Database
-from bondbot.models import Bond
+from bondbot.models import Bond, utcnow
 
 
 def test_upsert_and_watchlist(tmp_path) -> None:
@@ -60,6 +60,23 @@ def test_repair_bond_data_clears_legacy_outliers(tmp_path) -> None:
         assert loaded.price_pct is None
         assert loaded.g_spread_bp is None
         assert db.repair_bond_data() == 0
+    finally:
+        db.close()
+
+
+def test_old_unsent_alerts_expire(tmp_path) -> None:
+    db = Database(str(tmp_path / "alerts.db"))
+    try:
+        db.save_alert(
+            kind="test",
+            severity="info",
+            message="old",
+            dedupe_key="old:1",
+            created_at=utcnow() - timedelta(days=3),
+        )
+        assert db.unsent_alerts()
+        assert db.expire_alerts(hours=48) == 1
+        assert db.unsent_alerts() == []
     finally:
         db.close()
 

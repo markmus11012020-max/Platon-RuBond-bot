@@ -664,6 +664,16 @@ class Database:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def expire_alerts(self, hours: int = 48) -> int:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max(1, hours))).isoformat()
+        with self.conn:
+            cursor = self.conn.execute(
+                "UPDATE alerts SET sent_at = created_at "
+                "WHERE sent_at IS NULL AND created_at < ?",
+                (cutoff,),
+            )
+        return int(cursor.rowcount or 0)
+
     def mark_alert_sent(self, alert_id: int, sent_at: datetime | None = None) -> None:
         payload = (sent_at or datetime.now(timezone.utc)).isoformat()
         with self.conn:
