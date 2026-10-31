@@ -69,6 +69,23 @@ def _normalize_coupon_freq(value: float | None) -> float | None:
     return value
 
 
+def _coupon_type(row: dict[str, Any]) -> str | None:
+    text = " ".join(
+        str(row.get(key) or "")
+        for key in ("COUPON_DETAILS", "BONDTYPE", "BONDSUBTYPE")
+    ).lower()
+    if "структур" in text:
+        return "structured"
+    if "фиксирован" in text or "постоян" in text:
+        return "fixed"
+    if any(
+        marker in text
+        for marker in ("плава", "перемен", "ключев", "ruonia", "ипц", "индекс")
+    ):
+        return "floating"
+    return None
+
+
 def _parse_row(
     row: dict[str, Any],
     market: dict[str, Any],
@@ -136,6 +153,7 @@ def _parse_row(
             volume_mn_rub=volume_mn_rub,
             coupon_rub=coupon_rub,
             coupon_freq=coupon_freq,
+            coupon_type=_coupon_type(row),
             nkd_rub=_number(row.get("ACCRUEDINT")),
             duration_years=duration_years,
             next_coupon_date=next_coupon,

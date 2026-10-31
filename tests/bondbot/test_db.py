@@ -105,6 +105,11 @@ def test_legacy_positions_table_is_migrated(tmp_path) -> None:
             for row in db.conn.execute("PRAGMA table_info(positions)").fetchall()
         }
         assert "annual_coupon_rub" in columns
+        bond_columns = {
+            row[1]
+            for row in db.conn.execute("PRAGMA table_info(bonds)").fetchall()
+        }
+        assert "coupon_type" in bond_columns
         version = db.conn.execute("PRAGMA user_version").fetchone()[0]
         assert version == SCHEMA_VERSION
     finally:

@@ -88,6 +88,19 @@ def _norm_coupon_freq(value: float | None) -> float | None:
     return value
 
 
+def _norm_coupon_type(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.lower()
+    if "структур" in text:
+        return "structured"
+    if "фиксирован" in text or "постоян" in text:
+        return "fixed"
+    if "плава" in text or "перемен" in text:
+        return "floating"
+    return None
+
+
 def _parse_screener_row(row: Any, field_index: dict[str, int], source_url: str) -> Bond | None:
     cells = row.find_all("td")
     if len(cells) < 19:
@@ -184,6 +197,9 @@ def parse_detail(html: str, isin: str = "") -> tuple[Bond | None, list[Coupon]]:
     duration_days = _parse_float(_extract_first(r"Дюрация,\s*дней\s*(\d+)", text))
     coupon = _parse_float(_extract_first(r"Купон,\s*руб.*?([\d]+[.,][\d]+)", text))
     coupon_freq = _parse_float(_extract_first(r"Частота купона,\s*раз в год\s*([\d.,]+)", text))
+    coupon_type = _norm_coupon_type(
+        _extract_first(r"(?:Тип купона|Тип ставки)\s*[:\-]?\s*([А-Яа-яA-Za-z]+)", text)
+    )
     nkd = _parse_float(_extract_first(r"НКД.*?([\d]+[.,][\d]+)", text))
     current_yield = _parse_float(
         _extract_first(r"Текущ\.\s*дох\.\s*купона\s*([\d.,]+)%", text)
@@ -216,6 +232,7 @@ def parse_detail(html: str, isin: str = "") -> tuple[Bond | None, list[Coupon]]:
         g_spread_bp=g_spread,
         coupon_rub=coupon,
         coupon_freq=_norm_coupon_freq(coupon_freq),
+        coupon_type=coupon_type,
         nkd_rub=nkd,
         volume_mn_rub=volume_day,
         duration_years=round(duration_days / 365, 4) if duration_days else None,

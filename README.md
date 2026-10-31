@@ -153,7 +153,7 @@ Platon-RuBond-bot/
 .\.venv\Scripts\python -m bondbot.cli audit
 ```
 
-Команды VK: `/portfolio`, `/bond ISIN`, `/issuer НАЗВАНИЕ`, `/value ISIN`, `/watch`, `/screen`, `/safe`, `/exit`, `/alloc`, `/risk`, `/stress`, `/news`, `/new`, `/idea`, `/journal`, `/strategy`, `/relative`, `/calendar`, `/doctor`, `/whatsnew`, `/position`, `/ask`, `/clear`, `/keyboard`, `/status`, `/help`.
+Команды VK: `/portfolio`, `/bond ISIN`, `/issuer НАЗВАНИЕ`, `/value ISIN`, `/watch`, `/screen постоянный 2 4 12`, `/safe`, `/exit`, `/alloc`, `/risk`, `/stress`, `/news`, `/new`, `/idea`, `/journal`, `/strategy`, `/relative`, `/calendar`, `/doctor`, `/whatsnew`, `/position`, `/ask`, `/clear`, `/keyboard`, `/status`, `/help`.
 
 Любой обычный текст (без команды) уходит в диалог с ИИ; история — последние 12 сообщений, сброс — `/clear`.
 

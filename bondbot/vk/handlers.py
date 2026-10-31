@@ -5,7 +5,12 @@ import logging
 import re
 from datetime import date, datetime
 
-from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
+from bondbot.analytics.bonds import (
+    COUPON_TYPE_ALIASES,
+    coupon_type_label,
+    required_daily_volume_mn,
+    screen_bonds,
+)
 from bondbot.analytics.portfolio import analyze_portfolio
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.analytics.risk import assess_bond_risk, assess_portfolio_risk, stress_portfolio
@@ -53,7 +58,7 @@ HELP_TEXT = """Platon Bond Bot — аналитика облигаций РФ.
 /watch — список наблюдения
 /bond ISIN — карточка бумаги
 /issuer НАЗВАНИЕ — обзор эмитента без ISIN
-/screen — подбор по текущему профилю
+/screen [постоянный|плавающий] [2 4 12] — подбор с фильтром купона
 /safe — стабильные бумаги ЦБ+5–10 п.п.
 /exit — ликвидность и план выхода
 /alloc — целевая аллокация
@@ -198,6 +203,7 @@ def format_bond(bond: Bond) -> str:
         f"дюрация: {_num(bond.duration_years)} лет",
         f"Рейтинг: {bond.rating or '—'} · G-спред: {_num(bond.g_spread_bp, ' б.п.', 0)}",
         f"Купон: {_num(bond.coupon_rub, ' ₽')} × {_num(bond.coupon_freq, '', 0)} · "
+        f"тип: {coupon_type_label(bond.coupon_type)} · "
         f"НКД: {_num(bond.nkd_rub, ' ₽')}",
         f"Погашение: {bond.maturity_date or '—'} · оферта: {bond.offer_date or '—'}",
         f"Дневной оборот: {_num(bond.volume_mn_rub, ' млн ₽')}",
@@ -219,9 +225,10 @@ def format_screen(
     db: Database,
     limit: int = 8,
     max_yield: MaxYield | None = None,
+    filters: ScreenFilters | None = None,
 ) -> str:
     cap = max_yield or MaxYield(value_pct=settings.max_yield_pct, source="fixed")
-    filters = ScreenFilters(
+    filters = filters or ScreenFilters(
         min_yield_pct=settings.min_yield_pct,
         max_yield_pct=cap.value_pct,
         max_duration_years=settings.max_duration_years,
@@ -231,21 +238,30 @@ def format_screen(
         position_size_rub=settings.position_size_rub,
     )
     required = required_daily_volume_mn(
-        settings.position_size_rub, settings.max_pct_daily_volume
+        filters.position_size_rub or settings.position_size_rub,
+        settings.max_pct_daily_volume,
     )
     results = screen_bonds(db.list_bonds(), filters, required_volume_mn=required)
+    coupon_text = coupon_type_label(filters.coupon_type) if filters.coupon_type else "любой"
+    freq_text = (
+        ", ".join(f"{freq:g}" for freq in filters.coupon_freqs)
+        if filters.coupon_freqs
+        else "любая"
+    )
     if not results:
         return (
             f"Под текущий профиль ничего не найдено.\n"
+            f"Купон: {coupon_text} · выплат в год: {freq_text}\n"
             f"Лимит доходности: {cap.describe()}\n"
             f"Обнови данные на сервере."
         )
     lines = [
-        f"🔎 Кандидаты: доходность {settings.min_yield_pct}–{cap.value_pct:.2f}%, "
-        f"дюрация ≤ {settings.max_duration_years} лет, рейтинг ≥ {settings.min_rating}",
+        f"🔎 Кандидаты: доходность {filters.min_yield_pct}–{cap.value_pct:.2f}%, "
+        f"дюрация ≤ {filters.max_duration_years} лет, рейтинг ≥ {filters.min_rating}",
+        f"Купон: {coupon_text} · выплат в год: {freq_text}",
         f"Лимит: {cap.describe()}",
-        f"Позиция {_money(settings.position_size_rub)} ≤ {settings.max_pct_daily_volume:.0%} "
-        f"дневного объёма (≥ {required:.0f} млн ₽)",
+        f"Позиция {_money(filters.position_size_rub or settings.position_size_rub)} ≤ "
+        f"{settings.max_pct_daily_volume:.0%} дневного объёма (≥ {required:.0f} млн ₽)",
         "",
     ]
     for item in results[:limit]:
@@ -253,7 +269,8 @@ def format_screen(
         lines.append(
             f"• {bond.name} ({bond.isin})\n"
             f"  YTM {_num(bond.ytm_pct, '%')} · дюр. {_num(bond.duration_years)} · "
-            f"{bond.rating or '—'} · оборот {_num(bond.volume_mn_rub, ' млн ₽')}"
+            f"{bond.rating or '—'} · оборот {_num(bond.volume_mn_rub, ' млн ₽')} · "
+            f"купон {coupon_type_label(bond.coupon_type)} {_num(bond.coupon_freq, '/год', 0)}"
         )
     lines.append("")
     lines.append("Не рекомендация к покупке. Проверяй оферту, амортизацию и кредитные новости.")
@@ -341,8 +358,7 @@ class BotHandlers:
         elif command == "/portfolio":
             await self._reply(peer_id, format_portfolio(self.settings, self.db))
         elif command == "/screen":
-            cap = await resolve_max_yield(self.settings, self.db)
-            await self._reply(peer_id, format_screen(self.settings, self.db, max_yield=cap))
+            await self._screen(peer_id, argument)
         elif command in {"/safe", "/stable"}:
             await self._safe(peer_id)
         elif command == "/exit":
@@ -800,6 +816,39 @@ class BotHandlers:
         from bondbot.data.cbr import KeyRateService
 
         return await KeyRateService(self.settings, self.db).get()
+
+    async def _screen(self, peer_id: int, argument: str) -> None:
+        cap = await resolve_max_yield(self.settings, self.db)
+        tokens = [token for token in re.split(r"[\s,;]+", argument.lower()) if token]
+        coupon_type = None
+        freqs: list[float] = []
+        for token in tokens:
+            if token in COUPON_TYPE_ALIASES:
+                coupon_type = COUPON_TYPE_ALIASES[token]
+            elif re.fullmatch(r"\d{1,2}", token):
+                value = int(token)
+                if 1 <= value <= 12:
+                    freqs.append(float(value))
+        filters = ScreenFilters(
+            min_yield_pct=self.settings.min_yield_pct,
+            max_yield_pct=cap.value_pct,
+            max_duration_years=self.settings.max_duration_years,
+            min_rating=self.settings.min_rating,
+            min_price_pct=self.settings.min_price_pct,
+            max_price_pct=self.settings.max_price_pct,
+            coupon_type=coupon_type,
+            coupon_freqs=tuple(freqs) if freqs else None,
+            position_size_rub=self.settings.position_size_rub,
+        )
+        await self._reply(
+            peer_id,
+            format_screen(
+                self.settings,
+                self.db,
+                max_yield=cap,
+                filters=filters,
+            ),
+        )
 
     async def _safe(self, peer_id: int) -> None:
         try:

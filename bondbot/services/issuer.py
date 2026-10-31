@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from bondbot.analytics.bonds import coupon_type_label
 from bondbot.analytics.risk import assess_bond_risk
 from bondbot.config import Settings
 from bondbot.db import Database
@@ -52,6 +53,8 @@ def issuer_payload(
                 "price_pct": bond.price_pct,
                 "duration_years": bond.duration_years,
                 "rating": bond.rating,
+                "coupon_type": bond.coupon_type,
+                "coupon_freq": bond.coupon_freq,
                 "volume_mn_rub": bond.volume_mn_rub,
                 "maturity_date": bond.maturity_date.isoformat() if bond.maturity_date else None,
                 "offer_date": bond.offer_date.isoformat() if bond.offer_date else None,
@@ -120,6 +123,10 @@ def render_issuer(payload: dict[str, Any]) -> str:
                 f"• {bond['name']} ({bond['isin']}) — YTM {_pct(bond['ytm_pct'])}, "
                 f"цена {_pct(bond['price_pct'])}, дюр. {_num(bond['duration_years'])} г, "
                 f"{bond['rating'] or 'рейтинг н/д'}"
+            )
+            lines.append(
+                f"   купон: {coupon_type_label(bond.get('coupon_type'))} · "
+                f"выплат в год: {_num(bond.get('coupon_freq'), '', 0)}"
             )
             lines.append(
                 f"   риск {bond['risk_score']:.0f}/100 ({bond['risk_level']}) · "

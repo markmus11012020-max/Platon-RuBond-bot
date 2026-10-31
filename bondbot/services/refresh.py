@@ -23,6 +23,7 @@ OFFICIAL_FIELDS = (
     "volume_mn_rub",
     "coupon_rub",
     "coupon_freq",
+    "coupon_type",
     "nkd_rub",
     "duration_years",
     "next_coupon_date",

@@ -10,7 +10,7 @@ from typing import Any
 from bondbot.data.quality import BOND_LIMITS, sanitize_bond, sanitize_position
 from bondbot.models import Bond, Coupon, PortfolioPosition
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bonds (
@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS bonds (
     volume_mn_rub REAL,
     coupon_rub REAL,
     coupon_freq REAL,
+    coupon_type TEXT,
     nkd_rub REAL,
     duration_years REAL,
     next_coupon_date TEXT,
@@ -264,6 +265,15 @@ class Database:
             )
             version = 4
 
+        if version < 5:
+            columns = {
+                row[1]
+                for row in self.conn.execute("PRAGMA table_info(bonds)").fetchall()
+            }
+            if columns and "coupon_type" not in columns:
+                self.conn.execute("ALTER TABLE bonds ADD COLUMN coupon_type TEXT")
+            version = 5
+
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -274,13 +284,13 @@ class Database:
         INSERT INTO bonds (
             isin, name, issuer, price_pct, ytm_pct, current_coupon_yield_pct,
             annual_coupon_yield_pct, rating, g_spread_bp, volume_mn_rub,
-            coupon_rub, coupon_freq, nkd_rub, duration_years, next_coupon_date,
+            coupon_rub, coupon_freq, coupon_type, nkd_rub, duration_years, next_coupon_date,
             placement_date, maturity_date, offer_date, years_to_maturity,
             face_value, issue_size_rub, qual_only, amortized, source_url, fetched_at
         ) VALUES (
             :isin, :name, :issuer, :price_pct, :ytm_pct, :current_coupon_yield_pct,
             :annual_coupon_yield_pct, :rating, :g_spread_bp, :volume_mn_rub,
-            :coupon_rub, :coupon_freq, :nkd_rub, :duration_years, :next_coupon_date,
+            :coupon_rub, :coupon_freq, :coupon_type, :nkd_rub, :duration_years, :next_coupon_date,
             :placement_date, :maturity_date, :offer_date, :years_to_maturity,
             :face_value, :issue_size_rub, :qual_only, :amortized, :source_url, :fetched_at
         )
@@ -296,6 +306,7 @@ class Database:
             volume_mn_rub = COALESCE(excluded.volume_mn_rub, bonds.volume_mn_rub),
             coupon_rub = COALESCE(excluded.coupon_rub, bonds.coupon_rub),
             coupon_freq = COALESCE(excluded.coupon_freq, bonds.coupon_freq),
+            coupon_type = COALESCE(excluded.coupon_type, bonds.coupon_type),
             nkd_rub = COALESCE(excluded.nkd_rub, bonds.nkd_rub),
             duration_years = COALESCE(excluded.duration_years, bonds.duration_years),
             next_coupon_date = COALESCE(excluded.next_coupon_date, bonds.next_coupon_date),
@@ -326,6 +337,7 @@ class Database:
                     "volume_mn_rub": bond.volume_mn_rub,
                     "coupon_rub": bond.coupon_rub,
                     "coupon_freq": bond.coupon_freq,
+                    "coupon_type": bond.coupon_type,
                     "nkd_rub": bond.nkd_rub,
                     "duration_years": bond.duration_years,
                     "next_coupon_date": _date_iso(bond.next_coupon_date),

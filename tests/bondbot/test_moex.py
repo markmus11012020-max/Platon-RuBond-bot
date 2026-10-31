@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from bondbot.data.moex import parse_moex_bonds
+from bondbot.data.moex import _coupon_type, parse_moex_bonds
 
 SECURITIES = {
     "columns": [
@@ -42,9 +42,9 @@ SECURITIES = {
             100_000,
             "SUR",
             16.0,
-            "",
-            "",
-            "",
+            "Облигация с фиксированным купоном",
+            "До погашения",
+            "Фиксированный с известными купонами",
         ],
         [
             "USD1",
@@ -93,6 +93,15 @@ def test_parse_moex_bonds() -> None:
     assert bond.issue_size_rub == pytest.approx(100_000_000.0)
     assert bond.maturity_date is not None
     assert bond.next_coupon_date is not None
+    assert bond.coupon_type == "fixed"
+
+
+def test_coupon_type_mapping() -> None:
+    assert _coupon_type({"COUPON_DETAILS": "Фиксированный с известными купонами"}) == "fixed"
+    assert _coupon_type({"COUPON_DETAILS": "Ключевая ставка"}) == "floating"
+    assert _coupon_type({"BONDTYPE": "Облигация с плавающим купоном"}) == "floating"
+    assert _coupon_type({"COUPON_DETAILS": "Структурный купон"}) == "structured"
+    assert _coupon_type({}) is None
 
 
 def test_parse_moex_skips_currency_and_bad_boards() -> None:

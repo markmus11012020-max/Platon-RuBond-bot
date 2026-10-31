@@ -50,6 +50,38 @@ def meets_min_rating(value: str | None, minimum: str | None) -> bool:
     return rating_rank(value) >= rating_rank(minimum)
 
 
+COUPON_TYPE_LABELS = {
+    "fixed": "постоянный",
+    "floating": "плавающий",
+    "structured": "структурный",
+}
+
+COUPON_TYPE_ALIASES = {
+    "fixed": "fixed",
+    "постоянный": "fixed",
+    "фиксированный": "fixed",
+    "fixed_unknown": "fixed",
+    "floating": "floating",
+    "плавающий": "floating",
+    "переменный": "floating",
+    "ruonia": "floating",
+    "ключевая": "floating",
+    "структурный": "structured",
+    "structured": "structured",
+}
+
+
+def coupon_type_label(value: str | None) -> str:
+    return COUPON_TYPE_LABELS.get(value or "", value or "—")
+
+
+def coupon_type_matches(value: str | None, requested: str | None) -> bool:
+    if not requested or requested == "any":
+        return True
+    normalized = COUPON_TYPE_ALIASES.get(requested.lower(), requested.lower())
+    return (value or "").lower() == normalized
+
+
 def required_daily_volume_mn(position_size_rub: float, max_pct: float) -> float:
     if max_pct <= 0:
         return 0.0
@@ -85,6 +117,14 @@ def screen_bonds(
             continue
         if filters.max_duration_years is not None and bond.duration_years > filters.max_duration_years:
             continue
+        if not coupon_type_matches(bond.coupon_type, filters.coupon_type):
+            continue
+        if filters.coupon_freqs:
+            if bond.coupon_freq is None or not any(
+                abs(bond.coupon_freq - float(freq)) <= 0.5
+                for freq in filters.coupon_freqs
+            ):
+                continue
         if not meets_min_rating(bond.rating, filters.min_rating):
             continue
         if filters.min_price_pct is not None and bond.price_pct is not None:

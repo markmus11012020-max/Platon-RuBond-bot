@@ -6,7 +6,11 @@ import logging
 import sys
 from dataclasses import replace
 
-from bondbot.analytics.bonds import required_daily_volume_mn, screen_bonds
+from bondbot.analytics.bonds import (
+    coupon_type_label,
+    required_daily_volume_mn,
+    screen_bonds,
+)
 from bondbot.analytics.rates import MaxYield, resolve_max_yield
 from bondbot.config import load_settings
 from bondbot.data.cbr import KeyRateService
@@ -146,6 +150,17 @@ async def cmd_screen(args: argparse.Namespace, db: Database) -> None:
         cap = MaxYield(value_pct=args.yield_max, source="fixed")
     else:
         cap = await resolve_max_yield(settings, db)
+    coupon_freqs = None
+    if args.coupon_freq:
+        try:
+            coupon_freqs = tuple(
+                float(value)
+                for value in args.coupon_freq.replace(";", ",").split(",")
+                if value.strip()
+            )
+        except ValueError:
+            print("Частоты купона должны быть числами: --coupon-freq 2,4,12")
+            return
     filters = ScreenFilters(
         min_yield_pct=args.yield_min if args.yield_min is not None else settings.min_yield_pct,
         max_yield_pct=cap.value_pct,
@@ -154,6 +169,8 @@ async def cmd_screen(args: argparse.Namespace, db: Database) -> None:
         min_volume_mn_rub=args.volume_min,
         min_price_pct=args.price_min if args.price_min is not None else settings.min_price_pct,
         max_price_pct=args.price_max if args.price_max is not None else settings.max_price_pct,
+        coupon_type=args.coupon_type,
+        coupon_freqs=coupon_freqs,
         exclude_qual_only=not args.allow_qual,
         position_size_rub=position,
     )
@@ -163,18 +180,25 @@ async def cmd_screen(args: argparse.Namespace, db: Database) -> None:
     print(
         f"Фильтр: доходность {filters.min_yield_pct}–{filters.max_yield_pct}%, "
         f"дюрация <= {filters.max_duration_years} лет, рейтинг >= {filters.min_rating}, "
+        f"купон {filters.coupon_type or 'любой'}, выплат/год {filters.coupon_freqs or 'любая'}, "
         f"цена {filters.min_price_pct}–{filters.max_price_pct}%, объём >= {required:.1f} млн ₽ "
         f"(позиция {position:,.0f} ₽, доля объёма <= {settings.max_pct_daily_volume:.0%})"
     )
     if not results:
         print("Ничего не найдено. Обнови базу: python -m bondbot.cli update")
         return
-    print(f"{'ISIN':14} {'Доходн':>7} {'Дюр':>5} {'Рейт':>5} {'Объём':>8} {'Цена':>7}  Имя")
+    print(
+        f"{'ISIN':14} {'Доходн':>7} {'Дюр':>5} {'Рейт':>5} {'Купон':>10} "
+        f"{'Объём':>8} {'Цена':>7}  Имя"
+    )
     for item in results[: args.limit]:
         bond = item.bond
+        coupon = coupon_type_label(bond.coupon_type)
+        coupon_text = f"{coupon[:3]} {bond.coupon_freq:g}" if bond.coupon_freq else coupon[:3]
         print(
             f"{bond.isin:14} {_fmt(bond.ytm_pct, '%'):>7} {_fmt(bond.duration_years):>5} "
-            f"{(bond.rating or '—'):>5} {_fmt(bond.volume_mn_rub):>8} {_fmt(bond.price_pct):>7}  "
+            f"{(bond.rating or '—'):>5} {coupon_text:>10} "
+            f"{_fmt(bond.volume_mn_rub):>8} {_fmt(bond.price_pct):>7}  "
             f"{bond.name[:45]}"
         )
         if item.liquidity_share is not None:
@@ -404,6 +428,12 @@ def build_parser() -> argparse.ArgumentParser:
     screen.add_argument("--yield-max", type=float, default=None)
     screen.add_argument("--duration-max", type=float, default=None)
     screen.add_argument("--rating", default=None)
+    screen.add_argument(
+        "--coupon-type",
+        choices=["fixed", "floating", "structured"],
+        default=None,
+    )
+    screen.add_argument("--coupon-freq", default=None, help="например 2,4,12")
     screen.add_argument("--volume-min", type=float, default=None)
     screen.add_argument("--price-min", type=float, default=None)
     screen.add_argument("--price-max", type=float, default=None)

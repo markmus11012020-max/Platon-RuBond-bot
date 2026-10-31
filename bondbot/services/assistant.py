@@ -40,10 +40,12 @@ SYSTEM_PROMPT = """Ты — старший аналитик рынка росс�
 6. Если вопрос про новость, событие или эмитента — ищи через инструмент news с ключевыми словами.
 7. Если назван эмитент/компания без ISIN — сначала вызывай issuer_overview(name).
    Не проси ISIN, пока не проверил базу и новости: у нас есть поиск по названию.
-8. Пиши простым деловым текстом без Markdown: без #, **, *, таблиц и обратных кавычек.
+8. Если просят постоянный/фиксированный купон или частоту выплат 2/4/12 —
+   вызывай screen_bonds(coupon_type="fixed", coupon_freqs=[...]).
+9. Пиши простым деловым текстом без Markdown: без #, **, *, таблиц и обратных кавычек.
    Списки — через «•», заголовки — обычной строкой с двоеточием.
-9. Отвечай компактно: не более 8–10 пунктов, без воды и повторения вопроса.
-10. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
+10. Отвечай компактно: не более 8–10 пунктов, без воды и повторения вопроса.
+11. Всегда добавляй в конце: «Не индивидуальная инвестиционная рекомендация».
 """
 
 TOOL_SPECS: list[dict[str, Any]] = [
@@ -79,10 +81,23 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "screen_bonds",
-            "description": "Текущий скрининг по профилю: доходность, дюрация, рейтинг, цена, ликвидность.",
+            "description": (
+                "Скрининг по профилю: доходность, дюрация, рейтинг, цена, ликвидность. "
+                "Можно фильтровать тип купона (fixed/floating/structured) и частоту выплат в год."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 10}},
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                    "coupon_type": {
+                        "type": "string",
+                        "enum": ["fixed", "floating", "structured", "any"],
+                    },
+                    "coupon_freqs": {
+                        "type": "array",
+                        "items": {"type": "integer", "minimum": 1, "maximum": 12},
+                    },
+                },
             },
         },
     },
@@ -399,6 +414,8 @@ class Assistant:
     async def _tool_screen(self, arguments: dict[str, Any]) -> Any:
         snapshot = await self._snapshot()
         cap = await resolve_max_yield(self.settings, self.db)
+        coupon_type = str(arguments.get("coupon_type") or "").strip().lower() or None
+        coupon_freqs = arguments.get("coupon_freqs") or None
         filters = ScreenFilters(
             min_yield_pct=self.settings.min_yield_pct,
             max_yield_pct=cap.value_pct,
@@ -406,6 +423,8 @@ class Assistant:
             min_rating=self.settings.min_rating,
             min_price_pct=self.settings.min_price_pct,
             max_price_pct=self.settings.max_price_pct,
+            coupon_type=coupon_type,
+            coupon_freqs=tuple(float(value) for value in coupon_freqs) if coupon_freqs else None,
             position_size_rub=self.settings.position_size_rub,
         )
         required = required_daily_volume_mn(

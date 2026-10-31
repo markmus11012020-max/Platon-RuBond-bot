@@ -18,6 +18,8 @@ def _bond(isin: str, name: str, ytm: float = 20.0, **kwargs) -> Bond:
         rating="A+",
         price_pct=99.0,
         volume_mn_rub=50.0,
+        coupon_type="fixed",
+        coupon_freq=2.0,
         fetched_at=utcnow(),
     )
     base.update(kwargs)
@@ -63,6 +65,7 @@ def test_issuer_payload_and_render(tmp_path) -> None:
         text = render_issuer(payload)
         assert "обзор эмитента" in text
         assert "БалтЛизП15" in text
+        assert "постоянный" in text
         assert "БалтЛиз: что известно" in text
     finally:
         db.close()

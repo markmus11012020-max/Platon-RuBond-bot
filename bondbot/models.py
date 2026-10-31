@@ -36,6 +36,7 @@ class Bond:
     volume_mn_rub: float | None = None
     coupon_rub: float | None = None
     coupon_freq: float | None = None
+    coupon_type: str | None = None
     nkd_rub: float | None = None
     duration_years: float | None = None
     next_coupon_date: date | None = None
@@ -109,5 +110,7 @@ class ScreenFilters:
     min_volume_mn_rub: float | None = None
     min_price_pct: float | None = None
     max_price_pct: float | None = None
+    coupon_type: str | None = None
+    coupon_freqs: tuple[float, ...] | None = None
     exclude_qual_only: bool = True
     position_size_rub: float | None = None

@@ -229,6 +229,51 @@ def test_dialog_history_roundtrip(db: Database) -> None:
     assert handlers._load_dialog(ADMIN_ID) == []
 
 
+def test_screen_coupon_filter(db: Database) -> None:
+    handlers, vk = _owner_handlers(db)
+    db.kv_set(
+        CACHE_KEY,
+        KeyRateSnapshot(
+            value_pct=14.0,
+            as_of=date(2026, 10, 30),
+            fetched_at=utcnow(),
+        ).to_json(),
+    )
+    db.upsert_bonds(
+        [
+            Bond(
+                isin="FIX2",
+                name="Постоянный купон 2",
+                ytm_pct=18.0,
+                duration_years=1.0,
+                rating="AAA",
+                price_pct=100.0,
+                volume_mn_rub=100.0,
+                coupon_type="fixed",
+                coupon_freq=2.0,
+            )
+        ]
+    )
+    asyncio.run(
+        handlers.handle_update(
+            {
+                "type": "message_new",
+                "object": {
+                    "message": {
+                        "peer_id": CHAT_PEER,
+                        "from_id": ADMIN_ID,
+                        "text": "/screen постоянный 2",
+                    }
+                },
+            }
+        )
+    )
+    message = vk.sent[-1]["message"]
+    assert "Купон: постоянный" in message
+    assert "выплат в год: 2" in message
+    assert "FIX2" in message
+
+
 def test_keyboard_mention_prefix_is_parsed(db: Database) -> None:
     handlers, vk = _owner_handlers(db)
     asyncio.run(
