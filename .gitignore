@@ -78,3 +78,8 @@ portfolio_files/
 *.bak
 *.swp
 
+
+# Node / Next.js
+node_modules/
+.next/
+apps/web/*.png

@@ -1,0 +1,55 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    image: platon-premarket-api:0.1.0
+    env_file: .env
+    environment:
+      PREMARKET_ENVIRONMENT: production
+      PREMARKET_DEMO_MODE: "1"
+      PREMARKET_BOND_DB_PATH: /data/bondbot.db
+      PREMARKET_FREELANCE_DB_PATH: /data/freelance/bot.db
+      PREMARKET_CORS_ORIGINS: https://platoninvest.pro
+      TZ: Europe/Moscow
+    volumes:
+      - ./bondbot-data:/data:ro
+      - /opt/freelance-bot/data:/data/freelance:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    init: true
+    mem_limit: 320m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ""
+    image: platon-premarket-web:0.1.0
+    environment:
+      API_INTERNAL_URL: http://api:8000
+      NEXT_PUBLIC_API_BASE: ""
+      TZ: Europe/Moscow
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    init: true
+    mem_limit: 320m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

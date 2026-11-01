@@ -21,3 +21,7 @@ portfolio_files
 tests
 data
 bondbot-data
+node_modules
+.next
+apps/web/node_modules
+apps/web/.next
