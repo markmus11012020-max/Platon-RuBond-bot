@@ -10,7 +10,7 @@ router = APIRouter()
 
 @router.get("/overview", response_model=BondOverview)
 async def overview() -> BondOverview:
-    return build_overview()
+    return await build_overview()
 
 
 @router.post("/chat", response_model=ChatResponse)

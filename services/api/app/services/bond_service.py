@@ -8,9 +8,11 @@ from app.demo import (
     DEMO_AS_OF,
     DEMO_EXCLUDED,
     DEMO_INSIGHTS,
+    DEMO_RISK_CANDIDATES,
     demo_events,
     demo_positions,
 )
+from app.risk.repository import RiskRepository
 from app.schemas import (
     ActionCard,
     AllocationSlice,
@@ -23,6 +25,12 @@ from app.schemas import (
     PositionCard,
 )
 from app.services.llm_service import LLMAnswerer
+from app.services.risk_service import (
+    build_risk_summary,
+    evaluate_candidates,
+    to_candidate,
+    to_excluded,
+)
 
 COLORS = ["#f6c453", "#7dd3fc", "#a7f3d0", "#c4b5fd", "#fda4af", "#93c5fd"]
 
@@ -75,8 +83,42 @@ def _rating_mix(positions: list[dict]) -> dict[str, float]:
     }
 
 
-def build_overview() -> BondOverview:
+async def build_overview() -> BondOverview:
     positions = demo_positions()
+    settings = get_settings()
+    risk_summary: dict[str, object] = {}
+    candidates = []
+    excluded = []
+    try:
+        repository = RiskRepository(settings.risk_db_path)
+        if settings.demo_mode:
+            repository.seed_demo()
+        assessments = await evaluate_candidates(settings, repository)
+        risk_summary = build_risk_summary(assessments)
+        metadata = {item["isin"]: item for item in DEMO_RISK_CANDIDATES}
+        for assessment in assessments:
+            if assessment.status == "ok":
+                candidates.append(to_candidate(assessment, metadata[assessment.isin]))
+            else:
+                excluded.append(to_excluded(assessment))
+    except Exception:
+        excluded = [
+            ExcludedCandidate(
+                isin=item["isin"],
+                name=item["name"],
+                reason=item["reason"],
+                severity=item["severity"],
+            )
+            for item in DEMO_EXCLUDED
+        ]
+    insights = list(DEMO_INSIGHTS)
+    if risk_summary:
+        insights.insert(
+            1,
+            "Риск-монитор: проверено "
+            f"{risk_summary['total']}, прошли {risk_summary['passed']}, "
+            f"исключены {risk_summary['blocked'] + risk_summary['review']}.",
+        )
     return BondOverview(
         as_of=DEMO_AS_OF,
         summary=_summary(positions),
@@ -112,17 +154,9 @@ def build_overview() -> BondOverview:
             )
             for item in demo_events()
         ],
-        candidates=[],
-        excluded=[
-            ExcludedCandidate(
-                isin=item["isin"],
-                name=item["name"],
-                reason=item["reason"],
-                severity=item["severity"],
-            )
-            for item in DEMO_EXCLUDED
-        ],
-        insights=DEMO_INSIGHTS,
+        candidates=candidates,
+        excluded=excluded,
+        insights=insights,
     )
 
 
@@ -154,7 +188,7 @@ def _review_action() -> ActionCard:
 
 async def answer(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
     text = (question or "").strip().lower()
-    overview = build_overview()
+    overview = await build_overview()
     summary = overview.summary
 
     if any(word in text for word in ("привет", "что ты", "кто ты", "помощь")):

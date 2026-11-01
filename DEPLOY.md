@@ -131,3 +131,42 @@ gzip -c premarket-images.tar | ssh root@94.228.173.244 'gunzip -c | docker load'
 curl -s https://platoninvest.pro/api/health
 curl -s -o /dev/null -w '%{http_code}\n' https://platoninvest.pro/
 ```
+
+## Risk gate
+
+Риск-слой хранится в отдельной writable-базе `/data/premarket/risk.db`.
+
+Таблицы:
+
+- `credit_events` — кредитные события с датой, severity, источником и ссылкой;
+- `blocklist` — ручной блоклист с причиной, источником и датой;
+- `credit_checks` — подтверждённые кредитные проверки с сроком действия.
+
+Проверки кандидата:
+
+- блоклист;
+- кредитные события;
+- негативные новости по эмитенту;
+- просадка цены за 7 и 30 дней;
+- объём торгов к медиане 30 дней;
+- bid/ask и доступный объём;
+- свежесть данных MOEX;
+- наличие подтверждённой кредитной проверки.
+
+Если проверка не пройдена или данных нет, кандидат не показывается как идея.
+
+Админ-ручки требуют заголовок `X-Admin-Token`:
+
+```bash
+curl -X POST https://platoninvest.pro/api/risk/blocklist \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: $PREMARKET_ADMIN_TOKEN" \
+  -d '{"isin":"RU000A10G1Q1","reason":"Технический дефолт","source":"manual","source_url":"https://..."}'
+```
+
+Публичные ручки:
+
+- `GET /api/risk/summary`
+- `GET /api/risk/blocklist`
+- `GET /api/risk/events`
+- `GET /api/risk/candidates`

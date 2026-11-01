@@ -8,8 +8,10 @@ services:
     environment:
       PREMARKET_ENVIRONMENT: production
       PREMARKET_DEMO_MODE: "1"
-      PREMARKET_BOND_DB_PATH: /data/bondbot.db
+      PREMARKET_BOND_DB_PATH: /data/bondbot/bondbot.db
       PREMARKET_FREELANCE_DB_PATH: /freelance-data/bot.db
+      PREMARKET_RISK_DB_PATH: /data/premarket/risk.db
+      PREMARKET_ADMIN_TOKEN: ${PREMARKET_ADMIN_TOKEN:-}
       PREMARKET_CORS_ORIGINS: https://platoninvest.pro
       PREMARKET_LLM_ENABLED: ${PREMARKET_LLM_ENABLED:-0}
       PREMARKET_OPENAI_API_KEY: ${BONDBOT_OPENAI_API_KEY:-}
@@ -17,7 +19,8 @@ services:
       PREMARKET_OPENAI_MODEL: ${BONDBOT_OPENAI_MODEL:-deepseek-v4.1-flash-1017}
       TZ: Europe/Moscow
     volumes:
-      - ./bondbot-data:/data:ro
+      - ./bondbot-data:/data/bondbot:ro
+      - ./premarket-data:/data/premarket
       - /opt/freelance-bot/data:/freelance-data:ro
     ports:
       - "127.0.0.1:8000:8000"

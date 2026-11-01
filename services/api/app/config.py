@@ -25,6 +25,14 @@ class Settings(BaseSettings):
 
     bond_db_path: str = str(ROOT / "bondbot.db")
     freelance_db_path: str = ""
+    risk_db_path: str = str(ROOT / "services" / "api" / "data" / "risk.db")
+    admin_token: str = ""
+    risk_position_size_rub: int = 100_000
+    risk_min_volume_ratio: float = 0.3
+    risk_max_spread_pct: float = 2.0
+    risk_max_drawdown_7d: float = -7.0
+    risk_max_drawdown_30d: float = -15.0
+    risk_data_stale_days: int = 3
 
     tinvest_mcp_enabled: bool = False
     tinvest_mcp_mode: str = "sandbox"

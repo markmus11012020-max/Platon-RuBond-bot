@@ -83,3 +83,5 @@ portfolio_files/
 node_modules/
 .next/
 apps/web/*.png
+/premarket-data/
+/services/api/data/

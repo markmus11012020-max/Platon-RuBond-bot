@@ -1,10 +1,37 @@
 from __future__ import annotations
 
+from datetime import date
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.risk.moex import MarketSnapshot
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def fake_market(monkeypatch):
+    async def snapshot(isin: str, days: int = 45) -> MarketSnapshot:
+        return MarketSnapshot(
+            isin=isin,
+            last_price_pct=100.0,
+            last_value_rub=25_000_000,
+            drawdown_7d_pct=0.0,
+            drawdown_30d_pct=0.0,
+            volume_ratio_30d=1.0,
+            bid_pct=99.9,
+            offer_pct=100.1,
+            spread_pct=0.2,
+            available_buy_rub=2_000_000,
+            available_sell_rub=2_000_000,
+            data_date=date.today().isoformat(),
+            quote_time="10:00:00",
+            history_points=20,
+        )
+
+    monkeypatch.setattr("app.services.risk_service.fetch_snapshot", snapshot)
 
 
 def test_health() -> None:
@@ -83,4 +110,34 @@ def test_freelance_feed() -> None:
 
 def test_mcp_tools_unavailable_without_token() -> None:
     response = client.get("/api/mcp/tools")
+    assert response.status_code == 503
+
+
+def test_risk_summary_and_candidates() -> None:
+    summary = client.get("/api/risk/summary")
+    assert summary.status_code == 200
+    payload = summary.json()
+    assert payload["credit_events"] >= 1
+    assert payload["blocklist"] >= 1
+    assert payload["checks"]["total"] == 3
+    assert payload["checks"]["passed"] == 0
+    assert payload["checks"]["blocked"] >= 1
+
+    candidates = client.get("/api/risk/candidates")
+    assert candidates.status_code == 200
+    items = {item["isin"]: item for item in candidates.json()}
+    assert items["RU000A10G1Q1"]["status"] == "blocked"
+    assert items["RU000A10FWC7"]["status"] == "blocked"
+    assert items["RU000A10G1T5"]["status"] == "review"
+
+
+def test_risk_admin_endpoints_require_token() -> None:
+    response = client.post(
+        "/api/risk/blocklist",
+        json={
+            "isin": "RU000TEST0001",
+            "reason": "test",
+            "source": "test",
+        },
+    )
     assert response.status_code == 503

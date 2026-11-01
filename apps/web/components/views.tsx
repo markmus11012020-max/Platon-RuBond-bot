@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import type { Bot as BotType, HealthResponse } from "@/lib/types";
+import { RiskAdmin } from "@/components/risk-admin";
 
 export function BotsView({
   bots,
@@ -179,6 +180,8 @@ export function ProfileView({
           </span>
         </button>
       </section>
+
+      <RiskAdmin />
 
       <section className="section card" style={{ padding: 16 }}>
         <div className="h3">Документация</div>

@@ -1188,6 +1188,58 @@ a {
   box-shadow: var(--shadow);
 }
 
+.field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(7, 17, 15, 0.55);
+  color: var(--text);
+  padding: 10px 11px;
+  font-size: 12px;
+  outline: 0;
+}
+
+.input:focus {
+  border-color: rgba(56, 217, 169, 0.45);
+  box-shadow: 0 0 0 3px rgba(56, 217, 169, 0.08);
+}
+
+.input::placeholder {
+  color: var(--muted-2);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(7, 17, 15, 0.35);
+}
+
 .sheet-backdrop {
   position: fixed;
   inset: 0;

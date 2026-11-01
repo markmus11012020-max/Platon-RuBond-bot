@@ -163,3 +163,63 @@ class HealthResponse(BaseModel):
     mcp_mode: str
     bonds_db: bool
     freelance_db: bool
+
+
+class BlocklistEntry(BaseModel):
+    isin: str
+    reason: str
+    source: str
+    source_url: str = ""
+    severity: str = "blocked"
+    added_at: str
+    expires_at: str | None = None
+
+
+class BlocklistRequest(BaseModel):
+    isin: str = Field(min_length=6, max_length=32)
+    reason: str = Field(min_length=3, max_length=500)
+    source: str = Field(min_length=2, max_length=200)
+    source_url: str = ""
+    severity: str = "blocked"
+    expires_at: str | None = None
+
+
+class CreditEventEntry(BaseModel):
+    id: int | None = None
+    isin: str
+    issuer: str = ""
+    event_type: str
+    severity: str
+    event_date: str
+    source: str
+    source_url: str = ""
+    summary: str
+    created_at: str | None = None
+
+
+class CreditEventRequest(BaseModel):
+    isin: str = Field(min_length=6, max_length=32)
+    issuer: str = ""
+    event_type: str = Field(default="other", max_length=60)
+    severity: Literal["critical", "warning", "info"] = "warning"
+    event_date: str
+    source: str = Field(min_length=2, max_length=200)
+    source_url: str = ""
+    summary: str = Field(min_length=3, max_length=1000)
+
+
+class CreditCheckRequest(BaseModel):
+    isin: str = Field(min_length=6, max_length=32)
+    status: Literal["passed", "failed", "pending"] = "passed"
+    source: str = Field(min_length=2, max_length=200)
+    source_url: str = ""
+    note: str = ""
+    valid_days: int = Field(default=90, ge=1, le=365)
+
+
+class RiskSummary(BaseModel):
+    credit_events: int
+    blocklist: int
+    credit_checks: int
+    risk_db: str
+    checks: dict[str, Any] = Field(default_factory=dict)

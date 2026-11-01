@@ -155,3 +155,26 @@ export type HealthResponse = {
   bonds_db: boolean;
   freelance_db: boolean;
 };
+
+export type BlocklistEntry = {
+  isin: string;
+  reason: string;
+  source: string;
+  source_url: string;
+  severity: string;
+  added_at: string;
+  expires_at: string | null;
+};
+
+export type CreditEventEntry = {
+  id?: number;
+  isin: string;
+  issuer: string;
+  event_type: string;
+  severity: string;
+  event_date: string;
+  source: string;
+  source_url: string;
+  summary: string;
+  created_at?: string;
+};

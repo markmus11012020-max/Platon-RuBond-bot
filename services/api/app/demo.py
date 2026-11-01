@@ -184,6 +184,33 @@ DEMO_EXCLUDED: list[dict] = [
     },
 ]
 
+DEMO_RISK_CANDIDATES: list[dict] = [
+    {
+        "isin": "RU000A10G1Q1",
+        "name": "МГКЛ 2Р9",
+        "issuer": "МГКЛ",
+        "ytm_pct": 27.1,
+        "duration_years": 1.02,
+        "rating": "A-",
+    },
+    {
+        "isin": "RU000A10FWC7",
+        "name": "БалтЛизП12",
+        "issuer": "Балтийский лизинг",
+        "ytm_pct": 18.2,
+        "duration_years": 1.28,
+        "rating": "A+",
+    },
+    {
+        "isin": "RU000A10G1T5",
+        "name": "Аэрофьюэл 2Р4",
+        "issuer": "Аэрофьюэл",
+        "ytm_pct": 17.4,
+        "duration_years": 0.86,
+        "rating": "AA-",
+    },
+]
+
 DEMO_FREELANCE_ORDERS: list[dict] = [
     {
         "id": 101,
@@ -262,6 +289,7 @@ __all__ = [
     "DEMO_FREELANCE_ORDERS",
     "DEMO_INSIGHTS",
     "DEMO_POSITIONS",
+    "DEMO_RISK_CANDIDATES",
     "demo_events",
     "demo_positions",
 ]
