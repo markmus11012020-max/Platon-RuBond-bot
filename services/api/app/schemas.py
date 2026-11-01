@@ -227,6 +227,37 @@ class CreditCheckRequest(BaseModel):
     valid_days: int = Field(default=90, ge=1, le=365)
 
 
+class FundamentalsEntry(BaseModel):
+    isin: str = ""
+    issuer: str = ""
+    period: str
+    revenue_rub: float | None = None
+    net_profit_rub: float | None = None
+    ebitda_rub: float | None = None
+    net_debt_rub: float | None = None
+    equity_rub: float | None = None
+    current_ratio: float | None = None
+    source: str
+    source_url: str = ""
+    notes: str = ""
+    updated_at: str | None = None
+
+
+class FundamentalsRequest(BaseModel):
+    isin: str = Field(default="", max_length=32)
+    issuer: str = Field(default="", max_length=200)
+    period: str = Field(min_length=2, max_length=40)
+    revenue_rub: float | None = None
+    net_profit_rub: float | None = None
+    ebitda_rub: float | None = None
+    net_debt_rub: float | None = None
+    equity_rub: float | None = None
+    current_ratio: float | None = None
+    source: str = Field(min_length=2, max_length=200)
+    source_url: str = ""
+    notes: str = ""
+
+
 class RiskSummary(BaseModel):
     credit_events: int
     blocklist: int

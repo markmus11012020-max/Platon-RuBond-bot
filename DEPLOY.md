@@ -188,3 +188,46 @@ curl -X POST https://platoninvest.pro/api/risk/checks \
   -H "X-Admin-Token: $PREMARKET_ADMIN_TOKEN" \
   -d '{"isin":"RU000A10G1T5","status":"passed","source":"manual review","note":"Проверены отчётность, новости и ликвидность","valid_days":90}'
 ```
+
+## Диалоги
+
+Серверная история хранится в `/data/premarket/chat.db`:
+
+- `chat_sessions` — анонимная сессия, TTL 120 минут;
+- `chat_messages` — последние сообщения;
+- активный ISIN хранится в `state_json` сессии.
+
+API:
+
+- `POST /api/chat/session` — новая сессия;
+- `GET /api/chat/session/{id}` — история и активный ISIN;
+- `DELETE /api/chat/session/{id}` — сброс диалога.
+
+PWA хранит только `session_id` в localStorage. После перезагрузки история
+подтягивается с сервера. Без cookie и без персонального профиля.
+
+## Фундаментал эмитента
+
+Таблица `issuer_fundamentals` в `risk.db`:
+
+- `isin`, `issuer`, `period`;
+- `revenue_rub`, `net_profit_rub`, `ebitda_rub`, `net_debt_rub`, `equity_rub`;
+- `current_ratio`, `source`, `source_url`, `notes`, `updated_at`.
+
+Публичное чтение:
+
+```bash
+curl "https://platoninvest.pro/api/fundamentals?isin=RU000A10G1T5"
+curl "https://platoninvest.pro/api/fundamentals?issuer=Аэрофьюэлз"
+```
+
+Запись только с admin token:
+
+```bash
+curl -X POST https://platoninvest.pro/api/fundamentals \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: $PREMARKET_ADMIN_TOKEN" \
+  -d '{"isin":"RU000A10G1T5","issuer":"Аэрофьюэлз","period":"2025FY","revenue_rub":12500000000,"net_profit_rub":1200000000,"ebitda_rub":2100000000,"net_debt_rub":3400000000,"equity_rub":5000000000,"current_ratio":1.4,"source":"manual/report"}'
+```
+
+Если данных нет, агент обязан написать «нет данных», а не выдумывать показатели.

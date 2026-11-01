@@ -42,6 +42,27 @@ CREATE TABLE IF NOT EXISTS credit_checks (
     expires_at TEXT,
     note TEXT
 );
+
+CREATE TABLE IF NOT EXISTS issuer_fundamentals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    isin TEXT NOT NULL DEFAULT '',
+    issuer TEXT NOT NULL DEFAULT '',
+    period TEXT NOT NULL,
+    revenue_rub REAL,
+    net_profit_rub REAL,
+    ebitda_rub REAL,
+    net_debt_rub REAL,
+    equity_rub REAL,
+    current_ratio REAL,
+    source TEXT NOT NULL,
+    source_url TEXT,
+    notes TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(isin, issuer, period, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fundamentals_isin
+    ON issuer_fundamentals(isin, period DESC);
 """
 
 
@@ -286,6 +307,120 @@ class RiskRepository:
             "checked_at": payload[4],
             "expires_at": expires_at,
             "note": note,
+        }
+
+    def fundamentals_for(
+        self,
+        *,
+        isin: str = "",
+        issuer: str = "",
+        limit: int = 4,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if isin:
+            clauses.append("isin = ?")
+            params.append(isin.strip().upper())
+        if issuer:
+            clauses.append("lower(issuer) = lower(?)")
+            params.append(issuer.strip())
+        if not clauses:
+            return []
+        params.append(max(1, min(limit, 20)))
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT * FROM issuer_fundamentals
+                WHERE {" AND ".join(clauses)}
+                ORDER BY period DESC, updated_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_fundamentals(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM issuer_fundamentals
+                ORDER BY updated_at DESC, period DESC
+                LIMIT ?
+                """,
+                (max(1, min(limit, 500)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def upsert_fundamentals(
+        self,
+        *,
+        isin: str,
+        issuer: str,
+        period: str,
+        revenue_rub: float | None = None,
+        net_profit_rub: float | None = None,
+        ebitda_rub: float | None = None,
+        net_debt_rub: float | None = None,
+        equity_rub: float | None = None,
+        current_ratio: float | None = None,
+        source: str = "",
+        source_url: str = "",
+        notes: str = "",
+    ) -> dict[str, Any]:
+        isin = isin.strip().upper()
+        issuer = issuer.strip()
+        period = period.strip()
+        source = source.strip()
+        now = _now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO issuer_fundamentals
+                (isin, issuer, period, revenue_rub, net_profit_rub, ebitda_rub,
+                 net_debt_rub, equity_rub, current_ratio, source, source_url,
+                 notes, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(isin, issuer, period, source) DO UPDATE SET
+                    revenue_rub = excluded.revenue_rub,
+                    net_profit_rub = excluded.net_profit_rub,
+                    ebitda_rub = excluded.ebitda_rub,
+                    net_debt_rub = excluded.net_debt_rub,
+                    equity_rub = excluded.equity_rub,
+                    current_ratio = excluded.current_ratio,
+                    source_url = excluded.source_url,
+                    notes = excluded.notes,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    isin,
+                    issuer,
+                    period,
+                    revenue_rub,
+                    net_profit_rub,
+                    ebitda_rub,
+                    net_debt_rub,
+                    equity_rub,
+                    current_ratio,
+                    source,
+                    source_url,
+                    notes,
+                    now,
+                ),
+            )
+        return {
+            "isin": isin,
+            "issuer": issuer,
+            "period": period,
+            "revenue_rub": revenue_rub,
+            "net_profit_rub": net_profit_rub,
+            "ebitda_rub": ebitda_rub,
+            "net_debt_rub": net_debt_rub,
+            "equity_rub": equity_rub,
+            "current_ratio": current_ratio,
+            "source": source,
+            "source_url": source_url,
+            "notes": notes,
+            "updated_at": now,
         }
 
     def summary(self) -> dict[str, Any]:

@@ -97,3 +97,24 @@ def test_risk_gate_allows_after_credit_check(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("app.services.risk_service.fetch_snapshot", _good_snapshot)
     assessment = asyncio.run(evaluate_candidate(settings, repo, _candidate()))
     assert assessment.status == "ok"
+
+
+def test_fundamentals_roundtrip(tmp_path) -> None:
+    repo = RiskRepository(str(tmp_path / "fundamentals.db"))
+    repo.upsert_fundamentals(
+        isin="RU000A10G1T5",
+        issuer="Аэрофьюэлз",
+        period="2025FY",
+        revenue_rub=12_500_000_000,
+        net_profit_rub=1_200_000_000,
+        ebitda_rub=2_100_000_000,
+        net_debt_rub=3_400_000_000,
+        equity_rub=5_000_000_000,
+        current_ratio=1.4,
+        source="manual/report",
+    )
+    items = repo.fundamentals_for(isin="RU000A10G1T5")
+    assert len(items) == 1
+    assert items[0]["revenue_rub"] == 12_500_000_000
+    assert items[0]["period"] == "2025FY"
+    assert items[0]["source"] == "manual/report"

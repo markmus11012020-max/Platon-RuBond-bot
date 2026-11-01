@@ -239,3 +239,19 @@ def test_risk_admin_endpoints_require_token() -> None:
         },
     )
     assert response.status_code == 503
+
+
+def test_fundamentals_endpoints() -> None:
+    listing = client.get("/api/fundamentals")
+    assert listing.status_code == 200
+    assert isinstance(listing.json(), list)
+
+    denied = client.post(
+        "/api/fundamentals",
+        json={
+            "isin": "RU000A10G1T5",
+            "period": "2025FY",
+            "source": "manual",
+        },
+    )
+    assert denied.status_code == 503

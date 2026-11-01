@@ -197,6 +197,27 @@ def _last_isin(history: list[dict[str, str]] | None) -> str | None:
     return None
 
 
+def _fundamentals_text(items: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for item in items[:2]:
+        parts: list[str] = []
+        for key, label in (
+            ("revenue_rub", "выручка"),
+            ("net_profit_rub", "чистая прибыль"),
+            ("ebitda_rub", "EBITDA"),
+            ("net_debt_rub", "чистый долг"),
+            ("equity_rub", "капитал"),
+        ):
+            value = item.get(key)
+            if value is not None:
+                parts.append(f"{label} {value / 1_000_000:,.1f} млн ₽".replace(",", " "))
+        if item.get("current_ratio") is not None:
+            parts.append(f"current ratio {item['current_ratio']:.2f}")
+        if parts:
+            lines.append(f"• {item.get('period')}: " + ", ".join(parts))
+    return "\n".join(lines)
+
+
 async def answer(
     question: str,
     history: list[dict[str, str]] | None = None,
@@ -219,6 +240,7 @@ async def answer(
             repository = RiskRepository(settings.risk_db_path)
             if settings.demo_mode:
                 repository.seed_demo()
+            fundamentals = repository.fundamentals_for(isin=active_isin)
             assessment = await evaluate_candidate(
                 settings,
                 repository,
@@ -241,12 +263,15 @@ async def answer(
                 )
             )
             if current_isin:
+                fund_block = _fundamentals_text(fundamentals)
+                message = (
+                    f"По {active_isin}:\n{card.as_text()}\n\n"
+                    + (f"Фундаментал:\n{fund_block}\n\n" if fund_block else "")
+                    + f"{risk_line}\n\n"
+                    "Не индивидуальная инвестиционная рекомендация."
+                )
                 return ChatResponse(
-                    message=(
-                        f"По {active_isin}:\n{card.as_text()}\n\n"
-                        f"{risk_line}\n\n"
-                        "Не индивидуальная инвестиционная рекомендация."
-                    ),
+                    message=message,
                     suggestions=["Где риск?", "Покажи портфель", "Предложи замену"],
                 )
             card_context = card.as_dict()
@@ -257,6 +282,7 @@ async def answer(
                 overview,
                 history,
                 bond_card=card_context,
+                fundamentals=fundamentals,
             )
             if llm_text:
                 return ChatResponse(
@@ -302,8 +328,19 @@ async def answer(
         for word in ("замен", "swap", "доходн", "улучш", "продать", "купить")
     )
     if not is_swap:
-        llm_text = await LLMAnswerer(get_settings()).answer(
-            question, overview, history
+        fundamentals: list[dict[str, Any]] = []
+        if active_isin:
+            try:
+                fundamentals = RiskRepository(
+                    settings.risk_db_path
+                ).fundamentals_for(isin=active_isin)
+            except Exception:
+                fundamentals = []
+        llm_text = await LLMAnswerer(settings).answer(
+            question,
+            overview,
+            history,
+            fundamentals=fundamentals,
         )
         if llm_text:
             return ChatResponse(
