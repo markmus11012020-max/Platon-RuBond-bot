@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -304,12 +303,7 @@ class RiskRepository:
             "credit_events": int(events),
             "blocklist": int(blocked),
             "credit_checks": int(checks),
-            "risk_db": str(self.path),
         }
 
 
-def dump_evidence(items: list[dict[str, Any]]) -> str:
-    return json.dumps(items, ensure_ascii=False, default=str)
-
-
-__all__ = ["RiskRepository", "dump_evidence"]
+__all__ = ["RiskRepository"]

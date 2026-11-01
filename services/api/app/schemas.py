@@ -221,5 +221,4 @@ class RiskSummary(BaseModel):
     credit_events: int
     blocklist: int
     credit_checks: int
-    risk_db: str
     checks: dict[str, Any] = Field(default_factory=dict)

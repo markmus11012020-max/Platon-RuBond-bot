@@ -115,7 +115,6 @@ async def fetch_snapshot(isin: str, days: int = 45) -> MarketSnapshot:
         last_close = points[-1][1]
         snapshot.last_price_pct = last_close
         snapshot.last_value_rub = points[-1][2]
-        by_date = {item[0]: item[1] for item in points}
         for label, delta_days in (("7d", 7), ("30d", 30)):
             target = today - timedelta(days=delta_days)
             older = [item for item in points if item[0] <= target]

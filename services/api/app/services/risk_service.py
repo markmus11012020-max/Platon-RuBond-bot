@@ -7,8 +7,8 @@ from typing import Any
 
 from app.config import Settings
 from app.demo import DEMO_RISK_CANDIDATES
-from app.risk.moex import MarketSnapshot, fetch_snapshot
-from app.risk.news import NewsFlag, scan_news
+from app.risk.moex import fetch_snapshot
+from app.risk.news import scan_news
 from app.risk.repository import RiskRepository
 from app.schemas import CandidateCard, ExcludedCandidate
 
