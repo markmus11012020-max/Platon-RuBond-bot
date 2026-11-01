@@ -99,6 +99,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     history: list[ChatMessage] = Field(default_factory=list)
     bot_id: str = "bond"
+    session_id: str | None = None
 
 
 class ActionLeg(BaseModel):
@@ -125,6 +126,15 @@ class ChatResponse(BaseModel):
     message: str
     suggestions: list[str] = Field(default_factory=list)
     action: ActionCard | None = None
+    session_id: str | None = None
+    active_isin: str | None = None
+
+
+class ChatSessionResponse(BaseModel):
+    session_id: str
+    messages: list[ChatMessage] = Field(default_factory=list)
+    active_isin: str | None = None
+    expires_at: str | None = None
 
 
 class ConfirmResponse(BaseModel):

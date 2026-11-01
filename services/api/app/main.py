@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.routers import bond, freelance, risk, system
+from app.routers import bond, chat, freelance, risk, system
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +31,7 @@ app.add_middleware(
 )
 
 app.include_router(system.router, prefix="/api")
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(bond.router, prefix="/api/bots/bond", tags=["bond"])
 app.include_router(freelance.router, prefix="/api/bots/freelance", tags=["freelance"])
 app.include_router(risk.router, prefix="/api/risk", tags=["risk"])

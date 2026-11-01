@@ -11,6 +11,8 @@ services:
       PREMARKET_BOND_DB_PATH: /data/bondbot/bondbot.db
       PREMARKET_FREELANCE_DB_PATH: /freelance-data/bot.db
       PREMARKET_RISK_DB_PATH: /data/premarket/risk.db
+      PREMARKET_CHAT_DB_PATH: /data/premarket/chat.db
+      PREMARKET_SESSION_TTL_MINUTES: ${PREMARKET_SESSION_TTL_MINUTES:-120}
       PREMARKET_ADMIN_TOKEN: ${PREMARKET_ADMIN_TOKEN:-}
       PREMARKET_CORS_ORIGINS: https://platoninvest.pro
       PREMARKET_LLM_ENABLED: ${PREMARKET_LLM_ENABLED:-0}

@@ -3,6 +3,7 @@ import type {
   BlocklistEntry,
   ChatMessage,
   ChatResponse,
+  ChatSessionResponse,
   ConfirmResponse,
   CreditEventEntry,
   FreelanceResponse,
@@ -38,10 +39,18 @@ export const api = {
   bots: () => request<Bot[]>("/api/bots"),
   health: () => request<HealthResponse>("/api/health"),
   bondOverview: () => request<BondOverview>("/api/bots/bond/overview"),
-  bondChat: (message: string, history: ChatMessage[]) =>
+  bondChat: (message: string, history: ChatMessage[], sessionId?: string | null) =>
     request<ChatResponse>("/api/bots/bond/chat", {
       method: "POST",
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({ message, history, session_id: sessionId || null }),
+    }),
+  createChatSession: () =>
+    request<ChatSessionResponse>("/api/chat/session", { method: "POST" }),
+  getChatSession: (sessionId: string) =>
+    request<ChatSessionResponse>(`/api/chat/session/${sessionId}`),
+  deleteChatSession: (sessionId: string) =>
+    request<{ removed: boolean }>(`/api/chat/session/${sessionId}`, {
+      method: "DELETE",
     }),
   confirmAction: (id: string) =>
     request<ConfirmResponse>(`/api/bots/bond/actions/${id}/confirm`, {

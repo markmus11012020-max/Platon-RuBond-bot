@@ -197,7 +197,11 @@ def _last_isin(history: list[dict[str, str]] | None) -> str | None:
     return None
 
 
-async def answer(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
+async def answer(
+    question: str,
+    history: list[dict[str, str]] | None = None,
+    active_isin: str | None = None,
+) -> ChatResponse:
     text = (question or "").strip().lower()
     overview = await build_overview()
     summary = overview.summary
@@ -205,7 +209,7 @@ async def answer(question: str, history: list[dict[str, str]] | None = None) -> 
 
     isin_match = re.search(r"\bRU[A-Z0-9]{10}\b", (question or "").upper())
     current_isin = isin_match.group(0) if isin_match else None
-    active_isin = current_isin or _last_isin(history)
+    active_isin = current_isin or active_isin or _last_isin(history)
     known = {item.isin for item in overview.positions}
     known |= {item.isin for item in overview.excluded}
     known |= {item["isin"] for item in DEMO_RISK_CANDIDATES}

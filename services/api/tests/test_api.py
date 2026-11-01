@@ -154,6 +154,41 @@ def test_unknown_isin_lookup_card(monkeypatch) -> None:
     assert followup_message.count("Аэрофьюэлз003Р-01") == 0
 
 
+def test_chat_session_persistence() -> None:
+    first = client.post(
+        "/api/bots/bond/chat",
+        json={"message": "Что по RU000A10AS02?", "history": []},
+    )
+    assert first.status_code == 200
+    session_id = first.json()["session_id"]
+    assert session_id
+    assert first.json()["active_isin"] == "RU000A10AS02"
+
+    session = client.get(f"/api/chat/session/{session_id}")
+    assert session.status_code == 200
+    assert len(session.json()["messages"]) == 2
+
+    second = client.post(
+        "/api/bots/bond/chat",
+        json={
+            "message": "А что с купонами?",
+            "history": [],
+            "session_id": session_id,
+        },
+    )
+    assert second.status_code == 200
+    assert second.json()["session_id"] == session_id
+    assert second.json()["active_isin"] == "RU000A10AS02"
+
+    session = client.get(f"/api/chat/session/{session_id}")
+    assert len(session.json()["messages"]) == 4
+
+    removed = client.delete(f"/api/chat/session/{session_id}")
+    assert removed.status_code == 200
+    assert removed.json()["removed"] is True
+    assert client.get(f"/api/chat/session/{session_id}").status_code == 404
+
+
 def test_premarket_briefing() -> None:
     response = client.post(
         "/api/bots/bond/chat",

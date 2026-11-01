@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     bond_db_path: str = str(ROOT / "bondbot.db")
     freelance_db_path: str = ""
     risk_db_path: str = str(ROOT / "services" / "api" / "data" / "risk.db")
+    chat_db_path: str = str(ROOT / "services" / "api" / "data" / "chat.db")
+    session_ttl_minutes: int = 120
     admin_token: str = ""
     risk_position_size_rub: int = 100_000
     risk_min_volume_ratio: float = 0.3

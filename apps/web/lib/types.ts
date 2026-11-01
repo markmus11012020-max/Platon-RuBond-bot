@@ -112,6 +112,15 @@ export type ChatResponse = {
   message: string;
   suggestions: string[];
   action: ActionCard | null;
+  session_id?: string | null;
+  active_isin?: string | null;
+};
+
+export type ChatSessionResponse = {
+  session_id: string;
+  messages: ChatMessage[];
+  active_isin: string | null;
+  expires_at: string | null;
 };
 
 export type ConfirmResponse = {

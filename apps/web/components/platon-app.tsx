@@ -50,6 +50,7 @@ const DEFAULT_SUGGESTIONS = [
 ];
 
 const CHAT_STORAGE_KEY = "platon.chat.v1";
+const CHAT_SESSION_KEY = "platon.chat.session.v1";
 const CHAT_TTL_MS = 120 * 60 * 1000;
 
 type StoredChat = {
@@ -99,6 +100,48 @@ export function PlatonApp() {
   const [chatLoading, setChatLoading] = useState(false);
   const [action, setAction] = useState<ActionCard | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const remember = (value: string) => {
+      setSessionId(value);
+      try {
+        window.localStorage.setItem(CHAT_SESSION_KEY, value);
+      } catch {
+        // ignore storage errors
+      }
+    };
+    const init = async () => {
+      let saved = "";
+      try {
+        saved = window.localStorage.getItem(CHAT_SESSION_KEY) || "";
+      } catch {
+        saved = "";
+      }
+      if (saved) {
+        try {
+          const session = await api.getChatSession(saved);
+          if (cancelled) return;
+          remember(session.session_id);
+          if (session.messages.length) setMessages(session.messages);
+          return;
+        } catch {
+          // expired or removed: create a new one below
+        }
+      }
+      try {
+        const session = await api.createChatSession();
+        if (!cancelled) remember(session.session_id);
+      } catch {
+        // Chat still works without a server session; backend creates one on send.
+      }
+    };
+    void init();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const restored = loadChat();
@@ -218,7 +261,15 @@ export function PlatonApp() {
       setChatLoading(true);
       setAction(null);
       try {
-        const response = await api.bondChat(text, messages);
+        const response = await api.bondChat(text, messages, sessionId);
+        if (response.session_id) {
+          setSessionId(response.session_id);
+          try {
+            window.localStorage.setItem(CHAT_SESSION_KEY, response.session_id);
+          } catch {
+            // ignore storage errors
+          }
+        }
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: response.message },
@@ -240,7 +291,7 @@ export function PlatonApp() {
         setChatLoading(false);
       }
     },
-    [chatLoading, messages],
+    [chatLoading, messages, sessionId],
   );
 
   const openChatWith = useCallback(
@@ -252,16 +303,32 @@ export function PlatonApp() {
   );
 
   const resetChat = useCallback(() => {
+    const previous = sessionId;
     setMessages([INITIAL_MESSAGE]);
     setSuggestions(DEFAULT_SUGGESTIONS);
     setAction(null);
     setChatInput("");
     try {
       window.localStorage.removeItem(CHAT_STORAGE_KEY);
+      window.localStorage.removeItem(CHAT_SESSION_KEY);
     } catch {
       // ignore storage errors
     }
-  }, []);
+    if (previous) {
+      void api.deleteChatSession(previous).catch(() => undefined);
+    }
+    void api
+      .createChatSession()
+      .then((session) => {
+        setSessionId(session.session_id);
+        try {
+          window.localStorage.setItem(CHAT_SESSION_KEY, session.session_id);
+        } catch {
+          // ignore storage errors
+        }
+      })
+      .catch(() => undefined);
+  }, [sessionId]);
 
   const confirmAction = useCallback(async () => {
     if (!action || confirming) return;
