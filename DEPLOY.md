@@ -109,6 +109,8 @@ docker compose -p platon-bond-bot -f docker-compose.bondbot.yml start
 
 Caddy проксирует `https://platoninvest.pro/api/*` на API, остальное — на web.
 Токен T-Invest MCP хранится только в `.env` на сервере и не попадает в браузер.
+LLM включается через `PREMARKET_LLM_ENABLED=1`; ключ берётся из `BONDBOT_OPENAI_API_KEY`.
+Если LLM недоступен, чат автоматически падает в детерминированные ответы.
 
 Сборка и запуск:
 
