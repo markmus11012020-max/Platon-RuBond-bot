@@ -10,6 +10,8 @@ const EFFECT_LABELS: Record<string, string> = {
   duration_delta_years: "Дюрация",
   free_cash_rub: "Свободно",
   rating_change: "Рейтинг",
+  concentration_pct: "Концентрация",
+  limit_pct: "Лимит",
 };
 
 function effectValue(key: string, value: string | number): string {
@@ -21,6 +23,12 @@ function effectValue(key: string, value: string | number): string {
   }
   if (key === "free_cash_rub" && typeof value === "number") {
     return money(value);
+  }
+  if (
+    (key === "concentration_pct" || key === "limit_pct") &&
+    typeof value === "number"
+  ) {
+    return pct(value, 1);
   }
   return String(value);
 }
@@ -35,13 +43,14 @@ export function ActionCardView({
   confirming?: boolean;
 }) {
   const confirmed = action.status === "confirmed";
+  const review = action.kind === "review";
   return (
     <div className="action-card">
       <div className="action-head">
         <div>
-          <div className="chip gold">
-            <Sparkles size={11} />
-            План агента
+          <div className={`chip ${review ? "rose" : "gold"}`}>
+            {review ? <ShieldAlert size={11} /> : <Sparkles size={11} />}
+            {review ? "Риск-проверка" : "План агента"}
           </div>
           <div className="action-title" style={{ marginTop: 9 }}>
             {action.title}
@@ -50,10 +59,10 @@ export function ActionCardView({
         {confirmed ? (
           <div className="chip mint">
             <Check size={12} />
-            Подтверждено
+            Зафиксировано
           </div>
         ) : (
-          <div className="chip">Sandbox</div>
+          <div className="chip">{review ? "Без сделки" : "Sandbox"}</div>
         )}
       </div>
 
@@ -110,7 +119,11 @@ export function ActionCardView({
           onClick={onConfirm}
           disabled={confirming}
         >
-          {confirming ? "Подтверждаю..." : "Подтвердить в sandbox"}
+          {confirming
+            ? "Фиксирую..."
+            : review
+              ? "Зафиксировать проверку"
+              : "Подтвердить в sandbox"}
         </button>
       ) : null}
 
@@ -120,7 +133,9 @@ export function ActionCardView({
           style={{ marginTop: 10, display: "flex", gap: 6, alignItems: "center" }}
         >
           <ShieldAlert size={13} />
-          Операция записана в аудит. В production здесь будет MCP order-tool.
+          {review
+            ? "Проверка записана в аудит. Сделка не выставлялась."
+            : "Операция записана в аудит. В production здесь будет MCP order-tool."}
         </div>
       ) : null}
     </div>

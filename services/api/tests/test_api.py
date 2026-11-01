@@ -29,7 +29,12 @@ def test_bond_overview() -> None:
     assert payload["summary"]["total_value_rub"] == 5_768_810
     assert len(payload["positions"]) == 6
     assert len(payload["allocation"]) == 6
-    assert payload["allocation"][0]["share_pct"] > 0
+    assert payload["candidates"] == []
+    assert len(payload["excluded"]) == 3
+    assert {item["name"] for item in payload["excluded"]} >= {
+        "МГКЛ 2Р9",
+        "БалтЛизП12",
+    }
     assert payload["events"]
 
 
@@ -41,12 +46,16 @@ def test_bond_chat_and_confirm() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["action"]
+    assert payload["action"]["kind"] == "review"
+    assert payload["action"]["legs"] == []
+    assert "технический дефолт" in payload["message"].lower()
     action_id = payload["action"]["id"]
     assert payload["action"]["status"] == "proposed"
 
     confirmed = client.post(f"/api/bots/bond/actions/{action_id}/confirm")
     assert confirmed.status_code == 200
     assert confirmed.json()["status"] == "confirmed"
+    assert "сделка не выставлялась" in confirmed.json()["message"].lower()
     assert confirmed.json()["audit_id"].startswith("PRE-")
 
 

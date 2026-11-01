@@ -68,6 +68,14 @@ class CandidateCard(BaseModel):
     price_pct: float
     volume_mn_rub: float
     reason: str
+    risk_flags: list[str] = Field(default_factory=list)
+
+
+class ExcludedCandidate(BaseModel):
+    isin: str
+    name: str
+    reason: str
+    severity: Literal["blocked", "review"] = "blocked"
 
 
 class BondOverview(BaseModel):
@@ -78,6 +86,7 @@ class BondOverview(BaseModel):
     rating_mix: dict[str, float]
     events: list[EventCard]
     candidates: list[CandidateCard]
+    excluded: list[ExcludedCandidate] = Field(default_factory=list)
     insights: list[str] = Field(default_factory=list)
 
 

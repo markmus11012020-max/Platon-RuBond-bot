@@ -26,7 +26,6 @@ export function BondOverviewView({
 }) {
   const { summary } = data;
   const positive = summary.profit_rub >= 0;
-  const topCandidate = data.candidates[0];
 
   return (
     <>
@@ -280,68 +279,120 @@ export function BondOverviewView({
       <section className="section">
         <div className="section-head">
           <div>
-            <div className="h2">Идеи на замену</div>
+            <div className="h2">Кандидаты на проверку</div>
             <div className="tiny muted" style={{ marginTop: 4 }}>
-              Выше доходность или лучше качество
+              Не рекомендация. Сначала кредитные события и ликвидность
             </div>
           </div>
           <ScanSearch size={17} style={{ color: "var(--mint)" }} />
         </div>
-        <div className="candidate-list">
-          {data.candidates.map((candidate) => (
-            <div className="candidate" key={candidate.isin}>
+
+        <div
+          className="card"
+          style={{
+            padding: 14,
+            borderColor: "rgba(251,113,133,0.24)",
+            background:
+              "linear-gradient(180deg, rgba(45,20,24,0.72), rgba(15,27,22,0.86))",
+          }}
+        >
+          <div className="chip rose">
+            <ShieldAlert size={12} />
+            Риск-гейт включён
+          </div>
+          <div className="h3" style={{ marginTop: 9 }}>
+            Автоматические идеи отключены
+          </div>
+          <div className="tiny muted" style={{ marginTop: 6, lineHeight: 1.55 }}>
+            Система не показывает бумагу как идею, пока не проверены
+            кредитные события, аномальная распродажа, ликвидность и свежесть
+            котировок. Ниже — бумаги, которые исключены из кандидатов.
+          </div>
+        </div>
+
+        <div className="candidate-list" style={{ marginTop: 8 }}>
+          {data.excluded.map((item) => (
+            <div className="candidate" key={item.isin}>
               <div className="candidate-top">
                 <div>
                   <div className="position-name">
-                    {candidate.name}
-                    <span className="rating">{candidate.rating}</span>
+                    {item.name}
+                    <span className={`chip ${item.severity === "blocked" ? "rose" : "gold"}`}>
+                      {item.severity === "blocked" ? "Исключён" : "На проверке"}
+                    </span>
                   </div>
-                  <div className="position-meta">
-                    {candidate.isin} · цена {pct(candidate.price_pct)} · оборот{" "}
-                    {num(candidate.volume_mn_rub, 1)} млн ₽
-                  </div>
-                </div>
-                <div className="position-right">
-                  <div className="position-value" style={{ color: "var(--mint)" }}>
-                    {pct(candidate.ytm_pct)}
-                  </div>
-                  <div className="position-sub">
-                    дюр. {num(candidate.duration_years)} г.
-                  </div>
+                  <div className="position-meta">{item.isin}</div>
                 </div>
               </div>
-              <div className="candidate-reason">{candidate.reason}</div>
+              <div className="candidate-reason">{item.reason}</div>
             </div>
           ))}
         </div>
+
+        {data.candidates.length ? (
+          <div className="candidate-list" style={{ marginTop: 8 }}>
+            {data.candidates.map((candidate) => (
+              <div className="candidate" key={candidate.isin}>
+                <div className="candidate-top">
+                  <div>
+                    <div className="position-name">
+                      {candidate.name}
+                      <span className="rating">{candidate.rating}</span>
+                    </div>
+                    <div className="position-meta">
+                      {candidate.isin} · цена {pct(candidate.price_pct)} · оборот{" "}
+                      {num(candidate.volume_mn_rub, 1)} млн ₽
+                    </div>
+                  </div>
+                  <div className="position-right">
+                    <div className="position-value">
+                      {pct(candidate.ytm_pct)}
+                    </div>
+                    <div className="position-sub">
+                      дюр. {num(candidate.duration_years)} г.
+                    </div>
+                  </div>
+                </div>
+                <div className="candidate-reason">{candidate.reason}</div>
+                {candidate.risk_flags.length ? (
+                  <div className="freelance-meta" style={{ marginTop: 8 }}>
+                    {candidate.risk_flags.map((flag) => (
+                      <span className="chip rose" key={flag}>
+                        {flag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="section">
         <div className="action-card">
           <div className="action-head">
             <div>
-              <div className="chip gold">
-                <Sparkles size={11} />
-                Следующий шаг
+              <div className="chip rose">
+                <ShieldAlert size={11} />
+                Проверка перед сделкой
               </div>
               <div className="action-title" style={{ marginTop: 9 }}>
-                {topCandidate
-                  ? `Проверить swap на ${topCandidate.name}`
-                  : "Собрать план действий"}
+                Проверить риск перед заменой
               </div>
             </div>
             <ArrowUpRight size={18} style={{ color: "var(--gold)" }} />
           </div>
           <div className="action-desc">
-            Агент посчитает, что продать и купить, как изменятся доходность,
-            дюрация и концентрация. Сделка выполняется только после подтверждения.
+            Агент не предлагает конкретную бумагу. Он зафиксирует чек-лист
+            проверки и покажет, какие кандидаты исключены. Сделка не выставляется.
           </div>
           <button
             type="button"
             className="primary-button"
             onClick={() => onAsk("Предложи замену")}
           >
-            Собрать swap с агентом
+            Запросить риск-проверку
           </button>
         </div>
       </section>

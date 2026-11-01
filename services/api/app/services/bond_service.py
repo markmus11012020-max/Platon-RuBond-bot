@@ -6,21 +6,19 @@ from typing import Any
 from app.config import get_settings
 from app.demo import (
     DEMO_AS_OF,
-    DEMO_CANDIDATES,
+    DEMO_EXCLUDED,
     DEMO_INSIGHTS,
-    DEMO_POSITIONS,
     demo_events,
     demo_positions,
 )
 from app.schemas import (
     ActionCard,
-    ActionLeg,
     AllocationSlice,
     BondOverview,
-    CandidateCard,
     ChatResponse,
     ConfirmResponse,
     EventCard,
+    ExcludedCandidate,
     PortfolioSummary,
     PositionCard,
 )
@@ -114,61 +112,40 @@ def build_overview() -> BondOverview:
             )
             for item in demo_events()
         ],
-        candidates=[
-            CandidateCard(
+        candidates=[],
+        excluded=[
+            ExcludedCandidate(
                 isin=item["isin"],
                 name=item["name"],
-                ytm_pct=item["ytm_pct"],
-                duration_years=item["duration_years"],
-                rating=item["rating"],
-                price_pct=item["price_pct"],
-                volume_mn_rub=item["volume_mn_rub"],
                 reason=item["reason"],
+                severity=item["severity"],
             )
-            for item in DEMO_CANDIDATES
+            for item in DEMO_EXCLUDED
         ],
         insights=DEMO_INSIGHTS,
     )
 
 
-def _swap_action() -> ActionCard:
+def _review_action() -> ActionCard:
     action = ActionCard(
-        id="swap-tgk-mgkl",
-        title="Снизить долю ТГК-14 и добавить МГКЛ 2Р9",
+        id="review-tgk-concentration",
+        title="Проверить концентрацию ТГК-14 1Р5",
         description=(
-            "Продать 200 шт. ТГК-14 1Р5 и купить 200 шт. МГКЛ 2Р9. "
-            "Доля ТГК-14 снизится примерно до 24%, портфель станет доходнее "
-            "при сопоставимой дюрации."
+            "Автоматическую замену не предлагаю. Кандидаты не прошли проверку "
+            "кредитных событий и ликвидности. Сначала проверьте первоисточники, "
+            "кредитные события, цену, объём и доступность бумаги."
         ),
-        kind="rebalance",
+        kind="review",
         expected_effect={
-            "yield_delta_pct": 0.1,
-            "duration_delta_years": -0.02,
-            "free_cash_rub": 11_000,
-            "rating_change": "BBB- → A- по новой позиции",
+            "concentration_pct": 27.3,
+            "limit_pct": 25.0,
         },
-        legs=[
-            ActionLeg(
-                side="sell",
-                isin="RU000A10AS02",
-                name="ТГК-14 1Р5",
-                quantity=200,
-                price_pct=105.0,
-                amount_rub=210_000,
-            ),
-            ActionLeg(
-                side="buy",
-                isin="RU000A10G1Q1",
-                name="МГКЛ 2Р9",
-                quantity=200,
-                price_pct=99.5,
-                amount_rub=199_000,
-            ),
-        ],
+        legs=[],
         risk_notes=[
-            "МГКЛ 2Р9 — эмитент с рейтингом A-, проверь кредитный риск.",
-            "Сделка в sandbox: реальные заявки не выставляются.",
-            "Перед подтверждением проверь цену и доступный объём.",
+            "МГКЛ 2Р9 исключён: по данным мониторинга зафиксирован технический дефолт.",
+            "БалтЛизП12 исключён: аномальная распродажа, цена и объём вне нормы.",
+            "Аэрофьюэл 2Р4 исключён: недостаточно проверенных данных.",
+            "Сделка не выставляется. Это чек-лист проверки, а не рекомендация.",
         ],
     )
     _ACTIONS[action.id] = action
@@ -256,17 +233,19 @@ async def answer(question: str, history: list[dict[str, str]] | None = None) -> 
         )
 
     if is_swap:
-        action = _swap_action()
+        action = _review_action()
         return ChatResponse(
             message=(
-                "Вижу понятный swap-сценарий:\n"
-                "• Продать 200 шт. ТГК-14 1Р5 по 105,0% — около 210 000 ₽.\n"
-                "• Купить 200 шт. МГКЛ 2Р9 по 99,5% — около 199 000 ₽.\n"
-                "• Доходность портфеля +0,1 п.п., дюрация почти не меняется.\n"
-                "• Доля ТГК-14 снижается с 27% до 24%.\n\n"
-                "Это не рекомендация. Проверь карточку сделки и подтверди в sandbox."
+                "Автоматическую замену не предлагаю: сначала нужна проверка "
+                "кредитных событий и ликвидности.\n\n"
+                "Что уже исключено:\n"
+                "• МГКЛ 2Р9 — технический дефолт по данным мониторинга.\n"
+                "• БалтЛизП12 — аномальная распродажа, цена и объём вне нормы.\n"
+                "• Аэрофьюэл 2Р4 — недостаточно проверенных данных.\n\n"
+                "Могу зафиксировать риск-проверку и показать чек-лист. "
+                "Сделка не выставляется."
             ),
-            suggestions=["Подтвердить сделку", "Покажи риски", "Другой вариант"],
+            suggestions=["Зафиксировать проверку", "Где риск?", "Покажи портфель"],
             action=action,
         )
 
@@ -307,12 +286,19 @@ def confirm_action(action_id: str) -> ConfirmResponse | None:
         return None
     action.status = "confirmed"
     now = datetime.now(timezone.utc)
+    review = action.kind == "review"
     return ConfirmResponse(
         action_id=action.id,
         status="confirmed",
         message=(
-            "Сделка подтверждена в sandbox. В production-режиме здесь будет "
-            "вызов MCP order-tool после повторной проверки лимитов."
+            "Риск-проверка зафиксирована. Сделка не выставлялась. "
+            "Перед любым решением нужны первоисточники, проверка кредитных "
+            "событий и ликвидности."
+            if review
+            else (
+                "Сделка подтверждена в sandbox. В production-режиме здесь будет "
+                "вызов MCP order-tool после повторной проверки лимитов."
+            )
         ),
         audit_id=f"PRE-{now.strftime('%Y%m%d-%H%M%S')}",
         executed_at=now.isoformat(),

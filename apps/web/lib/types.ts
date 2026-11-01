@@ -61,6 +61,14 @@ export type CandidateCard = {
   price_pct: number;
   volume_mn_rub: number;
   reason: string;
+  risk_flags: string[];
+};
+
+export type ExcludedCandidate = {
+  isin: string;
+  name: string;
+  reason: string;
+  severity: "blocked" | "review";
 };
 
 export type BondOverview = {
@@ -71,6 +79,7 @@ export type BondOverview = {
   rating_mix: Record<string, number>;
   events: EventCard[];
   candidates: CandidateCard[];
+  excluded: ExcludedCandidate[];
   insights: string[];
 };
 
