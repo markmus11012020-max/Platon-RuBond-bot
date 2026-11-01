@@ -91,6 +91,18 @@ def test_unknown_action_returns_404() -> None:
     assert response.status_code == 404
 
 
+def test_unknown_isin_is_short_and_safe() -> None:
+    response = client.post(
+        "/api/bots/bond/chat",
+        json={"message": "Что думаешь про RU000A10E4Y1?", "history": []},
+    )
+    assert response.status_code == 200
+    message = response.json()["message"]
+    assert "данных" in message.lower()
+    assert "Не индивидуальная инвестиционная рекомендация" in message
+    assert len(message) < 500
+
+
 def test_premarket_briefing() -> None:
     response = client.post(
         "/api/bots/bond/chat",

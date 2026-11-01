@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -190,6 +191,24 @@ async def answer(question: str, history: list[dict[str, str]] | None = None) -> 
     text = (question or "").strip().lower()
     overview = await build_overview()
     summary = overview.summary
+
+    isin_match = re.search(r"\bRU[A-Z0-9]{10}\b", (question or "").upper())
+    if isin_match:
+        isin = isin_match.group(0)
+        known = {item.isin for item in overview.positions}
+        known |= {item.isin for item in overview.excluded}
+        known |= {item["isin"] for item in DEMO_RISK_CANDIDATES}
+        if isin not in known:
+            return ChatResponse(
+                message=(
+                    f"По {isin} данных в портфеле и проверенном списке нет.\n\n"
+                    "Что проверить: эмитент и рейтинг, кредитные события за 6–12 месяцев, "
+                    "объём и спред за 30 дней.\n\n"
+                    "Без карточки и риск-проверки оценку не даю. "
+                    "Не индивидуальная инвестиционная рекомендация."
+                ),
+                suggestions=["Покажи портфель", "Где риск?", "Предложи замену"],
+            )
 
     if any(word in text for word in ("привет", "что ты", "кто ты", "помощь")):
         return ChatResponse(
