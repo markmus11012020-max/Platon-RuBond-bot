@@ -195,6 +195,20 @@ async def answer(question: str, history: list[dict[str, str]] | None = None) -> 
             ],
         )
 
+    is_swap = any(
+        word in text
+        for word in ("замен", "swap", "доходн", "улучш", "продать", "купить")
+    )
+    if not is_swap:
+        llm_text = await LLMAnswerer(get_settings()).answer(
+            question, overview, history
+        )
+        if llm_text:
+            return ChatResponse(
+                message=llm_text,
+                suggestions=["Покажи портфель", "Где риск?", "Предложи замену"],
+            )
+
     if any(word in text for word in ("риск", "стресс", "концентрац")):
         return ChatResponse(
             message=(
@@ -222,7 +236,7 @@ async def answer(question: str, history: list[dict[str, str]] | None = None) -> 
             suggestions=["Предложи замену", "Где риск?", "Покажи портфель"],
         )
 
-    if any(word in text for word in ("замен", "swap", "доходн", "улучш", "продать", "купить")):
+    if is_swap:
         action = _swap_action()
         return ChatResponse(
             message=(
@@ -235,13 +249,6 @@ async def answer(question: str, history: list[dict[str, str]] | None = None) -> 
             ),
             suggestions=["Подтвердить сделку", "Покажи риски", "Другой вариант"],
             action=action,
-        )
-
-    llm_text = await LLMAnswerer(get_settings()).answer(question, overview, history)
-    if llm_text:
-        return ChatResponse(
-            message=llm_text,
-            suggestions=["Покажи портфель", "Где риск?", "Предложи замену"],
         )
 
     if any(word in text for word in ("портфель", "состав", "стоимость", "сколько")):
