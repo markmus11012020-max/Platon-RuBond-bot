@@ -272,7 +272,7 @@ async def answer(
                 )
                 return ChatResponse(
                     message=message,
-                    suggestions=["Где риск?", "Покажи портфель", "Предложи замену"],
+                    suggestions=["Разобрать подробнее", "Где риск?", "Предложи замену"],
                 )
             card_context = card.as_dict()
             card_context["risk_status"] = assessment.status
