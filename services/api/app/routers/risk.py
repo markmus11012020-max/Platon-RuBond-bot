@@ -39,6 +39,11 @@ def require_admin(token: str | None = Depends(admin_header)) -> None:
         raise HTTPException(status_code=401, detail="Неверный admin token")
 
 
+@router.get("/check")
+async def admin_check(_: None = Depends(require_admin)) -> dict[str, bool]:
+    return {"ok": True}
+
+
 @router.get("/summary", response_model=RiskSummary)
 async def summary(repo: RiskRepository = Depends(repository)) -> RiskSummary:
     settings = get_settings()

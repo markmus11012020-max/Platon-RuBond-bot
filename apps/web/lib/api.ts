@@ -61,6 +61,10 @@ export const api = {
   freelanceOrders: () =>
     request<FreelanceResponse>("/api/bots/freelance/orders"),
   riskBlocklist: () => request<BlocklistEntry[]>("/api/risk/blocklist"),
+  checkAdmin: (token: string) =>
+    request<{ ok: boolean }>("/api/risk/check", {
+      headers: { "X-Admin-Token": token },
+    }),
   riskEvents: () => request<CreditEventEntry[]>("/api/risk/events"),
   riskFundamentals: (isin?: string, issuer?: string) => {
     const params = new URLSearchParams();

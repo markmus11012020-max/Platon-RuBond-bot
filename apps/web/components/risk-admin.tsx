@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Plus, RefreshCw, ShieldOff, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
@@ -37,6 +37,7 @@ export function RiskAdmin() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [adminMode, setAdminMode] = useState(false);
 
   const refresh = async () => {
     const [blocked, news, reports] = await Promise.allSettled([
@@ -49,15 +50,45 @@ export function RiskAdmin() {
     if (reports.status === "fulfilled") setFundamentals(reports.value);
   };
 
+  const verify = async (value: string) => {
+    if (!value.trim()) {
+      setMessage("Введи admin token из .env.");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      await api.checkAdmin(value.trim());
+      setAdminMode(true);
+      await refresh();
+    } catch (exc) {
+      setAdminMode(false);
+      setMessage(
+        exc instanceof Error ? exc.message : "Не удалось проверить admin token",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const saved = window.sessionStorage.getItem(TOKEN_KEY) || "";
     setToken(saved);
-    void refresh();
+    if (saved) {
+      void verify(saved);
+    }
   }, []);
 
   const rememberToken = (value: string) => {
     setToken(value);
     window.sessionStorage.setItem(TOKEN_KEY, value);
+  };
+
+  const logout = () => {
+    setAdminMode(false);
+    setToken("");
+    window.sessionStorage.removeItem(TOKEN_KEY);
+    setMessage("");
   };
 
   const add = async () => {
@@ -189,39 +220,77 @@ export function RiskAdmin() {
             Risk Admin
           </div>
           <div className="h3" style={{ marginTop: 6 }}>
-            Блоклист и кредитные события
+            Админ-доступ
           </div>
         </div>
-        <button
-          type="button"
-          className="icon-button"
-          onClick={() => void refresh()}
-          aria-label="Обновить"
-        >
-          <RefreshCw size={15} />
-        </button>
+        {adminMode ? (
+          <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => void refresh()}
+              aria-label="Обновить"
+            >
+              <RefreshCw size={15} />
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={logout}
+            >
+              Выйти
+            </button>
+          </div>
+        ) : (
+          <div className="chip">Admin only</div>
+        )}
       </div>
 
       <div className="tiny muted" style={{ lineHeight: 1.5 }}>
-        Ручной блоклист — обязательный слой перед любыми идеями. Токен хранится
-        только в sessionStorage и не попадает в публичные ответы API.
+        Управление блоклистом, кредитными событиями и фундаменталом. Доступ
+        только по admin token из `.env`; данные не показываются публично в форме.
       </div>
 
-      <div className="field" style={{ marginTop: 12 }}>
-        <label className="field-label" htmlFor="risk-token">
-          Admin token
-        </label>
-        <input
-          id="risk-token"
-          className="input"
-          type="password"
-          value={token}
-          onChange={(event) => rememberToken(event.target.value)}
-          placeholder="PREMARKET_ADMIN_TOKEN"
-          autoComplete="off"
-        />
-      </div>
+      {!adminMode ? (
+        <>
+          <div className="field" style={{ marginTop: 12 }}>
+            <label className="field-label" htmlFor="risk-token">
+              Admin token
+            </label>
+            <input
+              id="risk-token"
+              className="input"
+              type="password"
+              value={token}
+              onChange={(event) => rememberToken(event.target.value)}
+              placeholder="PREMARKET_ADMIN_TOKEN"
+              autoComplete="off"
+            />
+          </div>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => void verify(token)}
+            disabled={loading}
+          >
+            {loading ? "Проверяю..." : "Войти как админ"}
+          </button>
+        </>
+      ) : (
+        <div className="chip mint" style={{ marginTop: 10 }}>
+          <ShieldCheck size={12} />
+          Admin mode
+        </div>
+      )}
 
+      {!adminMode && message ? (
+        <div className="tiny" style={{ marginTop: 10, color: "var(--rose)" }}>
+          {message}
+        </div>
+      ) : null}
+
+      {adminMode ? (
+        <>
       <div className="admin-grid">
         <div className="field">
           <label className="field-label" htmlFor="risk-isin">
@@ -610,6 +679,8 @@ export function RiskAdmin() {
         Демо-записи помечены source=manual/demo. Для production нужен реальный
         источник и дата проверки.
       </div>
+        </>
+      ) : null}
     </section>
   );
 }
