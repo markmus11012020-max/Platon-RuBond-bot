@@ -170,3 +170,21 @@ curl -X POST https://platoninvest.pro/api/risk/blocklist \
 - `GET /api/risk/blocklist`
 - `GET /api/risk/events`
 - `GET /api/risk/candidates`
+
+Кредитное событие:
+
+```bash
+curl -X POST https://platoninvest.pro/api/risk/events \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: $PREMARKET_ADMIN_TOKEN" \
+  -d '{"isin":"RU000A10G1Q1","event_type":"technical_default","severity":"critical","event_date":"2026-10-30","source":"manual","summary":"Технический дефолт"}'
+```
+
+Подтверждённая кредитная проверка:
+
+```bash
+curl -X POST https://platoninvest.pro/api/risk/checks \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: $PREMARKET_ADMIN_TOKEN" \
+  -d '{"isin":"RU000A10G1T5","status":"passed","source":"manual review","note":"Проверены отчётность, новости и ликвидность","valid_days":90}'
+```
