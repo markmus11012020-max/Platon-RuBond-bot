@@ -76,6 +76,24 @@ export function BondOverviewView({
         </div>
       </section>
 
+      <div className="suggestions" style={{ marginTop: 12 }}>
+        {[
+          "Утренний брифинг",
+          "Где риск?",
+          "Предложи замену",
+          "Что с купонами?",
+        ].map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            className="suggestion"
+            onClick={() => onAsk(prompt)}
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+
       <section className="section">
         <div className="section-head">
           <div>
