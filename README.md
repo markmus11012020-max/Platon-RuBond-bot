@@ -1,18 +1,22 @@
 Platon-RuBond-bot
 
-Автономный ИИ-агент рынка облигаций РФ: мониторинг Московской Биржи, анализ новостей, расчёт доходности, Risk-Officer и уведомления. В репозитории два продукта: исследовательский Streamlit-агент и production VK-бот bondbot.
+Автономный ИИ-агент рынка облигаций РФ: мониторинг Московской Биржи, анализ новостей, расчёт доходности, Risk-Officer и уведомления. В репозитории три продукта: исследовательский Streamlit-агент, production VK-бот bondbot и Premarket PWA.
 
-ДВА ПРОДУКТА В ОДНОМ РЕПОЗИТОРИИ
+ТРИ ПРОДУКТА В ОДНОМ РЕПОЗИТОРИИ
 
 Streamlit-агент
 Точка входа: app.py, src/
 Назначение: исследовательский UI с LangGraph, RAG, Risk-Officer, новостями и портфелем.
 
-VK-БОТ BONDBOT
+VK-бот bondbot
 Точка входа: bondbot/
-Назначение: текущий production-фокус. Детерминированная аналитика облигаций и помощник в VK для участников сообщества.
+Назначение: production-бот в VK. Детерминированная аналитика облигаций, портфель, брокерские интеграции и помощник для участников сообщества.
 
-Краткая документация по VK-боту находится в bondbot/README.md.
+Premarket PWA
+Точка входа: apps/web, services/api
+Назначение: мобильное PWA для конкурса «Инвест. Премаркет». Bond Copilot, риск-гейт, серверные диалоги, фундаментал и второй модуль Freelance Radar.
+
+Краткая документация по VK-боту находится в bondbot/README.md. Конкурсный сценарий и план демо — в COMPETITION.md.
 
 
 АРХИТЕКТУРА
@@ -129,6 +133,25 @@ Platon-RuBond-bot/
 │   ├── Dockerfile                  Образ production-бота
 │   └── README.md                   Документация VK-бота
 │
+├── apps/
+│   └── web/                        Next.js PWA: портфель, агент, Freelance Radar
+│       ├── app/                    App Router, manifest, глобальные стили
+│       ├── components/             Экраны, чат, графики, Risk Admin
+│       ├── lib/                    API-клиент и типы
+│       └── public/                 Иконки, service worker, PWA
+│
+├── services/
+│   └── api/                        FastAPI gateway
+│       ├── app/chat/               Серверные сессии и история диалога
+│       ├── app/risk/               Credit events, blocklist, MOEX, новости
+│       ├── app/routers/            bond, chat, freelance, risk, fundamentals
+│       ├── app/services/           Bond Copilot, lookup, LLM, CSV, MCP
+│       └── tests/                  API-тесты
+│
+├── infra/                          Caddy и схема деплоя PWA
+├── docker-compose.premarket.yml    Compose-проект platon-premarket
+├── COMPETITION.md                  Конкурсный сценарий и план демо
+│
 └── tests/                          Pytest suite
     ├── agent/
     │   └── test_module2_upgrades.py
@@ -182,6 +205,8 @@ CLI
 
 Администратору доступны портфель, позиции, watchlist, стратегии, стресс-тест, журнал и брокерские команды. Публичным пользователям — аналитика, скрининг, карточки бумаг, новости, налоги и ИИ-ассистент.
 
+В Premarket PWA анонимные пользователи получают аналитику и чат, но не видят админ-формы. Risk Admin, импорт фундаментала и управление блоклистом открываются только после проверки admin token.
+
 Портфель
 
 Портфель администратора обновляется файлом portfolio.html из Smart-Lab, отправленным боту в VK. Бот заменяет состав портфеля, удаляет старые позиции и обновляет карточки бумаг.
@@ -219,17 +244,52 @@ Production-развёртывание выполняется отдельным 
 
 PREMARKET PWA
 
-Новый слой для конкурса «Инвест. Премаркет»: мобильное PWA на Next.js и FastAPI gateway с MCP-клиентом.
+Новый слой для конкурса «Инвест. Премаркет»: мобильное PWA на Next.js и FastAPI gateway с риск-гейтом, диалогами и фундаменталом.
 
-Структура:
+Архитектура
 
-- apps/web — Next.js PWA: портфель, чат с агентом, сделки, второй бот Freelance Radar;
-- services/api — FastAPI: API gateway, mock/sandbox данные, read-only адаптеры;
-- modules/bond — логика Bond Copilot;
-- modules/freelance — read-only лента заказов;
+```
+Пользователь
+    |
+    v
+Caddy / HTTPS
+    |-- /api/* --> FastAPI gateway
+    |                |-- T-Invest MCP (sandbox, токен ожидается)
+    |                |-- Smart-Lab / MOEX ISS
+    |                |-- risk.db: credit events, blocklist, fundamentals
+    |                |-- chat.db: серверные сессии диалога
+    |                `-- bondbot: портфель и риск-аналитика
+    |
+    `-- /* ------> Next.js PWA
+                     |-- Bond Copilot
+                     |-- Freelance Radar
+                     |-- Risk Admin
+                     `-- PWA manifest / service worker
+```
+
+Возможности
+
+- Bond Copilot: портфель, позиции, графики, купоны, оферты, кандидаты и риск-статус.
+- ISIN lookup: карточка бумаги из Smart-Lab и MOEX, даже если её нет в портфеле.
+- Серверные диалоги: история и активный ISIN в chat.db, TTL 120 минут.
+- Follow-up без повторного ISIN: бот понимает, о какой бумаге идёт речь.
+- LLM объясняет, но не считает числа и не даёт прямых рекомендаций.
+- Risk gate: credit events, ручной блоклист, новости, просадка 7/30 дней, объём, bid/ask и кредитные проверки.
+- Фундаментал: issuer_fundamentals с выручкой, прибылью, EBITDA, долгом и капиталом.
+- CSV-импорт фундаментала с шаблоном и разбором UTF-8/CP1251.
+- Risk Admin: доступ только после проверки admin token.
+- Freelance Radar: read-only лента заказов из SQLite freelance-бота.
+- PWA: установка на телефон, офлайн-shell, мобильная и десктопная версии.
+
+Структура
+
+- apps/web — Next.js PWA.
+- services/api — FastAPI gateway, риск-слой, чат и MCP-клиент.
 - infra — Caddy и схема деплоя.
+- docker-compose.premarket.yml — compose-проект platon-premarket.
+- COMPETITION.md — конкурсный сценарий и план демо.
 
-Запуск:
+Запуск
 
 ```bash
 docker compose -p platon-premarket -f docker-compose.premarket.yml up -d --build
@@ -248,15 +308,111 @@ PWA: https://platoninvest.pro
 
 API: https://platoninvest.pro/api
 
-Документация API: https://platoninvest.pro/api/docs
+Swagger: https://platoninvest.pro/api/docs
 
-T-Invest MCP подключается через PREMARKET_TINVEST_MCP_* в .env. Токен хранится только на backend. Сделки выполняются в sandbox и только после подтверждения. LLM включается через PREMARKET_LLM_ENABLED и используется только для объяснений; при ошибке чат переходит на детерминированные ответы. В демо-режиме используются данные портфеля и mock-сценарии, чтобы интерфейс работал без токена.
+Основные ручки:
 
-Риск-гейт: credit events, ручной блоклист, новости, просадка 7/30 дней, объём, bid/ask и кредитные проверки. Пока проверка не пройдена, бумага не показывается как идея. Управление блоклистом: /api/risk и раздел Risk Admin в профиле PWA.
+```text
+GET  /api/health
+GET  /api/bots
+GET  /api/bots/bond/overview
+POST /api/bots/bond/chat
+POST /api/chat/session
+GET  /api/chat/session/{id}
+GET  /api/risk/summary
+GET  /api/risk/candidates
+GET  /api/fundamentals?isin=...
+POST /api/fundamentals
+POST /api/fundamentals/import
+```
 
-Диалог: серверная сессия в chat.db, TTL 120 минут, история сообщений и активный ISIN. PWA хранит только session_id и восстанавливает беседу после перезагрузки.
+Bond Copilot
 
-Фундаментал: таблица issuer_fundamentals в risk.db. Агент использует выручку, прибыль, EBITDA, долг и капитал только при наличии проверенных данных; иначе отвечает «нет данных».
+Основной сценарий:
+
+1. Пользователь открывает PWA.
+2. Смотрит портфель, доходность, дюрацию, купоны и оферты.
+3. Спрашивает про риск, купоны или замену.
+4. Агент проверяет ISIN, карточку, риск-гейт и фундаментал.
+5. Показывает сценарии и риск-статус без прямой рекомендации.
+6. Если бумага не прошла проверку, объясняет почему.
+7. Сделка в sandbox возможна только после подтверждения.
+
+Т-Инвестиции MCP
+
+Подключение через PREMARKET_TINVEST_MCP_* в .env. Токен хранится только на backend. Пока токен не задан, MCP выключен, а PWA работает на demo/sandbox данных.
+
+Риск-гейт
+
+Таблицы в risk.db:
+
+- credit_events — кредитные события с датой, severity, источником и ссылкой;
+- blocklist — ручной блоклист с причиной, источником и датой;
+- credit_checks — подтверждённые кредитные проверки со сроком действия;
+- issuer_fundamentals — фундаментал эмитента.
+
+Проверки:
+
+- ручной блоклист;
+- кредитные события;
+- негативные новости по эмитенту;
+- просадка цены за 7 и 30 дней;
+- объём торгов к медиане 30 дней;
+- bid/ask, спред и доступный объём;
+- свежесть данных MOEX;
+- наличие подтверждённой кредитной проверки.
+
+Если проверка не пройдена или данных нет, бумага не показывается как идея.
+Управление: PWA → «Ещё» → Risk Admin. Доступ только после admin token.
+
+Фундаментал и CSV
+
+Fundamentals API:
+
+```text
+GET  /api/fundamentals?isin=RU000A10E4Y1
+GET  /api/fundamentals?issuer=Аэрофьюэлз
+POST /api/fundamentals          (X-Admin-Token)
+GET  /api/fundamentals/template
+POST /api/fundamentals/import   (X-Admin-Token)
+```
+
+CSV-колонки:
+
+```text
+isin,issuer,period,revenue_rub,net_profit_rub,ebitda_rub,net_debt_rub,equity_rub,current_ratio,source,source_url,notes
+```
+
+Суммы — в рублях. Поддержка UTF-8 и CP1251, разделитель `,` или `;`.
+Если фундаментала нет, агент обязан написать «нет данных», а не выдумывать цифры.
+
+Диалоги и стиль
+
+- chat.db хранит сессии и сообщения.
+- PWA хранит только session_id.
+- После перезагрузки история подтягивается с сервера.
+- Активный ISIN хранится в состоянии сессии.
+- Стиль: деловой русский текст без Markdown, списки через «•», не более 8–10 пунктов.
+- Прямые рекомендации «покупать/продавать» запрещены.
+- Уточняющий вопрос — максимум один и только если он помогает.
+
+Безопасность
+
+- Админ-ручки требуют X-Admin-Token.
+- Risk Admin скрыт до проверки токена.
+- Токены T-Invest и admin token не передаются в браузер.
+- Публичные пользователи не видят админ-формы и не могут менять риск-данные.
+- Сделки в sandbox выполняются только после подтверждения.
+- Персональные профили не сохраняются.
+
+Ограничения
+
+- T-Invest MCP ещё не подключён: нужен sandbox token.
+- Портфель в PWA пока demo-снимок, совпадающий с текущим портфелем.
+- Фундаментал хранится, но пока не заполнен реальными отчётами.
+- Полноценной авторизации пользователей нет, только анонимные сессии.
+- Push-уведомления не включены.
+- У СберИнвестиций нет публичного API для счетов физлиц.
 
 Конкурсный сценарий и план демо: COMPETITION.md.
 
@@ -336,6 +492,17 @@ VK-бот:
 - BONDBOT_NEWS_ENABLED, BONDBOT_NEWS_FEEDS, BONDBOT_NEWS_INTERVAL_MINUTES — новости.
 - BONDBOT_LLM_ENABLED, BONDBOT_OPENAI_BASE_URL, BONDBOT_OPENAI_API_KEY, BONDBOT_OPENAI_MODEL — LLM-ассистент.
 
+Premarket PWA:
+
+- PREMARKET_ENVIRONMENT, PREMARKET_DEMO_MODE, PREMARKET_CORS_ORIGINS — окружение и CORS.
+- PREMARKET_BOND_DB_PATH, PREMARKET_FREELANCE_DB_PATH — источники данных.
+- PREMARKET_RISK_DB_PATH, PREMARKET_CHAT_DB_PATH — risk.db и chat.db.
+- PREMARKET_TINVEST_MCP_ENABLED, PREMARKET_TINVEST_MCP_MODE, PREMARKET_TINVEST_MCP_TOKEN — T-Invest MCP.
+- PREMARKET_LLM_ENABLED, PREMARKET_OPENAI_API_KEY, PREMARKET_OPENAI_MODEL — LLM-слой PWA.
+- PREMARKET_ADMIN_TOKEN — доступ к Risk Admin и админ-ручкам.
+- PREMARKET_SESSION_TTL_MINUTES — срок жизни серверной сессии.
+- PREMARKET_RISK_* — пороги просадки, объёма, спреда и свежести данных.
+
 Полный список находится в .env.example.
 
 
@@ -343,6 +510,9 @@ VK-бот:
 
 ```bash
 pytest -v
+pytest services/api/tests -q
+cd apps/web
+npm run build
 ```
 
 Покрытие:
@@ -355,6 +525,10 @@ pytest -v
 - LocalTracer: span lifecycle.
 - PipelineRunner: intent routing, streaming, Risk Officer.
 - VK-бот: фильтры, сортировка, публичный доступ, портфель, брокеры, планировщик.
+- PWA API: risk gate, blocklist, credit events, fundamentals, CSV, chat sessions, MCP tools.
+- PWA: production build Next.js и TypeScript.
+
+Сейчас: 151 основной тест и 23 API-теста, всего 174.
 
 
 ТЕХНОЛОГИЧЕСКИЙ СТЕК
@@ -369,6 +543,10 @@ pytest -v
 - Notifications: Telegram Bot API.
 - Testing: pytest.
 - VK-бот: aiohttp, VK LongPoll, T-Invest REST API, APScheduler.
+- Premarket PWA: Next.js 16, React 19, TypeScript, Tailwind, Recharts, PWA manifest/service worker.
+- Premarket API: FastAPI, Pydantic, SQLite risk.db/chat.db, httpx.
+- Risk data: MOEX ISS history/marketdata, Smart-Lab, новостная база бота, ручной blocklist.
+- Broker: T-Invest REST и MCP sandbox, read-only по умолчанию.
 
 
 КЛЮЧЕВЫЕ МОДУЛИ
@@ -434,6 +612,8 @@ RISK OFFICER И HUMAN-IN-THE-LOOP
 
 При HIGH или CRITICAL граф останавливается на ноде human_gate и ждёт решения оператора: approve или reject.
 
+В Premarket PWA добавлен отдельный риск-гейт для кандидатов: credit events, ручной блоклист, новости, просадка цены за 7/30 дней, объём, bid/ask, доступный объём и подтверждённая кредитная проверка. Без прохождения проверки бумага не показывается как идея.
+
 
 ROADMAP
 
@@ -454,14 +634,26 @@ ROADMAP
 - Публичный доступ для участников VK-сообщества.
 - Read-only интеграция T-Invest и команды /broker.
 - Импорт портфеля по файлу или прямой ссылке.
+- Premarket PWA: Next.js, FastAPI, Caddy, HTTPS, PWA install.
+- Bond Copilot: портфель, графики, карточка ISIN, чат и follow-up.
+- Серверные сессии и история диалога, активный ISIN.
+- Риск-гейт: credit events, blocklist, новости, MOEX 7/30, bid/ask, кредитные проверки.
+- Фундаментал issuer_fundamentals и CSV-импорт.
+- Risk Admin с проверкой admin token.
+- Freelance Radar на реальной SQLite-базе.
 
 Планы:
 
+- Подключить T-Invest MCP sandbox token и live-портфель.
+- Заполнить issuer_fundamentals официальной отчётностью.
+- Подключить внешний credit-event источник и issuer-level события.
+- Добавить авторизацию пользователей и перенос сессий между устройствами.
+- Добавить push-уведомления через VAPID.
 - Импорт брокерского отчёта СберИнвестиций.
 - Telegram-алерты: заглушка готова, нужен токен бота.
 - Backtesting стратегий на исторических данных.
 - Интеграция с Cbonds и БКС для расширенных данных.
-- Multi-user auth и персональные портфели.
+- Demo-видео и pitch для конкурса «Инвест. Премаркет».
 
 
 ЛИЦЕНЗИЯ
