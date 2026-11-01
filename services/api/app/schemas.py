@@ -258,6 +258,13 @@ class FundamentalsRequest(BaseModel):
     notes: str = ""
 
 
+class FundamentalsImportResult(BaseModel):
+    imported: int
+    skipped: int
+    errors: list[str] = Field(default_factory=list)
+    total: int = 0
+
+
 class RiskSummary(BaseModel):
     credit_events: int
     blocklist: int

@@ -8,6 +8,7 @@ import type {
   CreditEventEntry,
   FreelanceResponse,
   FundamentalsEntry,
+  FundamentalsImportResult,
   HealthResponse,
   Bot,
 } from "./types";
@@ -90,6 +91,26 @@ export const api = {
       headers: { "X-Admin-Token": token },
       body: JSON.stringify(payload),
     }),
+  importRiskFundamentals: async (token: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${API_BASE}/api/fundamentals/import`, {
+      method: "POST",
+      headers: { "X-Admin-Token": token },
+      body: form,
+    });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const payload = (await response.json()) as { detail?: string };
+        detail = payload.detail || detail;
+      } catch {
+        // keep status text
+      }
+      throw new Error(detail);
+    }
+    return (await response.json()) as FundamentalsImportResult;
+  },
   addRiskBlocklist: (
     token: string,
     payload: {

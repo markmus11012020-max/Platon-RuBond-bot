@@ -34,6 +34,7 @@ export function RiskAdmin() {
   const [source, setSource] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [fund, setFund] = useState(EMPTY_FUND);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -148,6 +149,32 @@ export function RiskAdmin() {
       await refresh();
     } catch (exc) {
       setMessage(exc instanceof Error ? exc.message : "Не удалось сохранить фундаментал");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const importCsv = async () => {
+    if (!csvFile) {
+      setMessage("Выбери CSV-файл.");
+      return;
+    }
+    if (!token) {
+      setMessage("Введи admin token из .env.");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      const result = await api.importRiskFundamentals(token, csvFile);
+      setMessage(
+        `CSV: импортировано ${result.imported}, пропущено ${result.skipped}` +
+          (result.errors.length ? `. Ошибки: ${result.errors.slice(0, 3).join("; ")}` : ""),
+      );
+      setCsvFile(null);
+      await refresh();
+    } catch (exc) {
+      setMessage(exc instanceof Error ? exc.message : "Не удалось импортировать CSV");
     } finally {
       setLoading(false);
     }
@@ -504,6 +531,51 @@ export function RiskAdmin() {
           ) : (
             <div className="tiny muted">Фундаментал пока не загружен.</div>
           )}
+        </div>
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <label className="field-label" htmlFor="fund-csv">
+            Импорт из CSV
+          </label>
+          <input
+            id="fund-csv"
+            className="input"
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            marginTop: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void importCsv()}
+            disabled={loading || !csvFile}
+          >
+            Импортировать CSV
+          </button>
+          <a
+            className="link-button"
+            href="/api/fundamentals/template"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            Скачать шаблон
+          </a>
+        </div>
+        <div className="tiny muted" style={{ marginTop: 6 }}>
+          Колонки: isin, issuer, period, revenue_rub, net_profit_rub, ebitda_rub,
+          net_debt_rub, equity_rub, current_ratio, source, source_url, notes.
+          Суммы в рублях.
         </div>
       </div>
 

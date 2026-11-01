@@ -9,3 +9,4 @@ mcp>=1.30,<2
 aiohttp>=3.10,<4
 beautifulsoup4>=4.12,<5
 lxml>=5.2,<7
+python-multipart>=0.0.9,<1

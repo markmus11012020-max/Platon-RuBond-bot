@@ -6,6 +6,7 @@ from datetime import date
 from app.config import Settings
 from app.risk.moex import MarketSnapshot
 from app.risk.repository import RiskRepository
+from app.services.fundamentals_csv import parse_fundamentals_csv, template_csv
 from app.services.risk_service import evaluate_candidate
 
 
@@ -118,3 +119,24 @@ def test_fundamentals_roundtrip(tmp_path) -> None:
     assert items[0]["revenue_rub"] == 12_500_000_000
     assert items[0]["period"] == "2025FY"
     assert items[0]["source"] == "manual/report"
+
+
+def test_fundamentals_csv_parser() -> None:
+    raw = (
+        "isin;issuer;period;revenue_rub;net_profit_rub;ebitda_rub;"
+        "net_debt_rub;equity_rub;current_ratio;source\n"
+        "RU000A10E4Y1;Аэрофьюэлз;2025FY;12 500 000 000;1 200 000 000;"
+        "2 100 000 000;3 400 000 000;5 000 000 000;1,4;e-disclosure\n"
+        "BAD;Без периода;;;;;;;manual\n"
+    ).encode("utf-8")
+    parsed = parse_fundamentals_csv(raw)
+    assert len(parsed.rows) == 2
+    assert parsed.rows[0].error == ""
+    assert parsed.rows[0].data["revenue_rub"] == 12_500_000_000
+    assert parsed.rows[0].data["current_ratio"] == 1.4
+    assert "нужны period и source" in parsed.rows[1].error
+
+
+def test_fundamentals_csv_template() -> None:
+    assert "revenue_rub" in template_csv()
+    assert "RU000A10E4Y1" in template_csv()

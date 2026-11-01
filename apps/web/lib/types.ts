@@ -203,3 +203,10 @@ export type FundamentalsEntry = {
   notes: string;
   updated_at?: string | null;
 };
+
+export type FundamentalsImportResult = {
+  imported: number;
+  skipped: number;
+  errors: string[];
+  total: number;
+};
