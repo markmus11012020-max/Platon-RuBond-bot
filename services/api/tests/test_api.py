@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.risk.moex import MarketSnapshot
+from app.services.bond_lookup import BondLookup
 
 client = TestClient(app)
 
@@ -91,16 +92,66 @@ def test_unknown_action_returns_404() -> None:
     assert response.status_code == 404
 
 
-def test_unknown_isin_is_short_and_safe() -> None:
+def test_unknown_isin_without_card(monkeypatch) -> None:
+    async def no_card(isin: str):
+        return None
+
+    monkeypatch.setattr("app.services.bond_service.lookup_bond", no_card)
     response = client.post(
         "/api/bots/bond/chat",
         json={"message": "Что думаешь про RU000A10E4Y1?", "history": []},
     )
     assert response.status_code == 200
     message = response.json()["message"]
-    assert "данных" in message.lower()
+    assert "не нашлось" in message.lower()
     assert "Не индивидуальная инвестиционная рекомендация" in message
     assert len(message) < 500
+
+
+def test_unknown_isin_lookup_card(monkeypatch) -> None:
+    async def card(isin: str):
+        return BondLookup(
+            isin=isin,
+            name="Аэрофьюэлз003Р-01",
+            rating="A",
+            price_pct=101.65,
+            ytm_pct=20.22,
+            duration_years=1.49,
+            coupon_rub=49.86,
+            coupon_freq=4,
+            maturity_date=date(2028, 7, 21),
+            bid_pct=101.55,
+            offer_pct=101.64,
+            spread_pct=0.09,
+            available_buy_rub=500_000,
+            data_date=date.today().isoformat(),
+        )
+
+    monkeypatch.setattr("app.services.bond_service.lookup_bond", card)
+    response = client.post(
+        "/api/bots/bond/chat",
+        json={"message": "Что думаешь про RU000A10E4Y1?", "history": []},
+    )
+    assert response.status_code == 200
+    message = response.json()["message"]
+    assert "Аэрофьюэлз003Р-01" in message
+    assert "Рейтинг: A" in message
+    assert "Риск-проверка" in message
+
+    followup = client.post(
+        "/api/bots/bond/chat",
+        json={
+            "message": "эмитент и рейтинг, кредитные события за 6-12 месяцев",
+            "history": [
+                {"role": "user", "content": "Что думаешь про RU000A10E4Y1?"},
+                {"role": "assistant", "content": message},
+            ],
+        },
+    )
+    assert followup.status_code == 200
+    followup_message = followup.json()["message"]
+    assert "карточка уже в диалоге" in followup_message
+    assert followup_message.count("Аэрофьюэлз003Р-01") == 0
 
 
 def test_premarket_briefing() -> None:

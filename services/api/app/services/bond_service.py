@@ -25,9 +25,11 @@ from app.schemas import (
     PortfolioSummary,
     PositionCard,
 )
+from app.services.bond_lookup import lookup_bond
 from app.services.llm_service import LLMAnswerer
 from app.services.risk_service import (
     build_risk_summary,
+    evaluate_candidate,
     evaluate_candidates,
     to_candidate,
     to_excluded,
@@ -187,28 +189,94 @@ def _review_action() -> ActionCard:
     return action
 
 
+def _last_isin(history: list[dict[str, str]] | None) -> str | None:
+    for item in reversed(history or []):
+        match = re.search(r"\bRU[A-Z0-9]{10}\b", (item.get("content") or "").upper())
+        if match:
+            return match.group(0)
+    return None
+
+
 async def answer(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
     text = (question or "").strip().lower()
     overview = await build_overview()
     summary = overview.summary
+    settings = get_settings()
 
     isin_match = re.search(r"\bRU[A-Z0-9]{10}\b", (question or "").upper())
-    if isin_match:
-        isin = isin_match.group(0)
-        known = {item.isin for item in overview.positions}
-        known |= {item.isin for item in overview.excluded}
-        known |= {item["isin"] for item in DEMO_RISK_CANDIDATES}
-        if isin not in known:
+    current_isin = isin_match.group(0) if isin_match else None
+    active_isin = current_isin or _last_isin(history)
+    known = {item.isin for item in overview.positions}
+    known |= {item.isin for item in overview.excluded}
+    known |= {item["isin"] for item in DEMO_RISK_CANDIDATES}
+    if active_isin and active_isin not in known:
+        card = await lookup_bond(active_isin)
+        if card is not None:
+            repository = RiskRepository(settings.risk_db_path)
+            if settings.demo_mode:
+                repository.seed_demo()
+            assessment = await evaluate_candidate(
+                settings,
+                repository,
+                {
+                    "isin": card.isin,
+                    "name": card.name,
+                    "issuer": "",
+                    "ytm_pct": card.ytm_pct,
+                    "duration_years": card.duration_years,
+                    "rating": card.rating,
+                },
+            )
+            risk_line = (
+                "Риск-проверка: пройдена, но это не инвестиционная рекомендация."
+                if assessment.status == "ok"
+                else (
+                    "Риск-проверка: "
+                    f"{'заблокирована' if assessment.status == 'blocked' else 'на проверке'}. "
+                    f"{assessment.reason[:300]}"
+                )
+            )
+            if current_isin:
+                return ChatResponse(
+                    message=(
+                        f"По {active_isin}:\n{card.as_text()}\n\n"
+                        f"{risk_line}\n\n"
+                        "Не индивидуальная инвестиционная рекомендация."
+                    ),
+                    suggestions=["Где риск?", "Покажи портфель", "Предложи замену"],
+                )
+            card_context = card.as_dict()
+            card_context["risk_status"] = assessment.status
+            card_context["risk_reason"] = assessment.reason
+            llm_text = await LLMAnswerer(settings).answer(
+                question,
+                overview,
+                history,
+                bond_card=card_context,
+            )
+            if llm_text:
+                return ChatResponse(
+                    message=llm_text,
+                    suggestions=["Где риск?", "Покажи портфель", "Предложи замену"],
+                )
             return ChatResponse(
                 message=(
-                    f"По {isin} данных в портфеле и проверенном списке нет.\n\n"
-                    "Что проверить: эмитент и рейтинг, кредитные события за 6–12 месяцев, "
-                    "объём и спред за 30 дней.\n\n"
-                    "Без карточки и риск-проверки оценку не даю. "
+                    f"По {active_isin} карточка уже в диалоге. "
+                    f"Статус риск-проверки: {risk_line.removeprefix('Риск-проверка: ')}\n\n"
+                    "Уточни, что проверить: кредитные события, ликвидность "
+                    "или купонный график.\n\n"
                     "Не индивидуальная инвестиционная рекомендация."
                 ),
-                suggestions=["Покажи портфель", "Где риск?", "Предложи замену"],
+                suggestions=["Где риск?", "Покажи портфель", "Предложи замену"],
             )
+        return ChatResponse(
+            message=(
+                f"По {active_isin} данных в базе и на MOEX не нашлось.\n\n"
+                "Проверь ISIN или пришли ссылку на карточку бумаги. "
+                "Не индивидуальная инвестиционная рекомендация."
+            ),
+            suggestions=["Покажи портфель", "Где риск?", "Предложи замену"],
+        )
 
     if any(word in text for word in ("привет", "что ты", "кто ты", "помощь")):
         return ChatResponse(

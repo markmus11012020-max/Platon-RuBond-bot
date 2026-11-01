@@ -81,7 +81,11 @@ class LLMAnswerer:
     def ready(self) -> bool:
         return self.settings.llm_enabled and bool(self.settings.openai_api_key)
 
-    def _context(self, overview: BondOverview) -> dict[str, Any]:
+    def _context(
+        self,
+        overview: BondOverview,
+        bond_card: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {
             "as_of": overview.as_of,
             "summary": overview.summary.model_dump(),
@@ -90,6 +94,7 @@ class LLMAnswerer:
             "candidates": [item.model_dump() for item in overview.candidates[:4]],
             "excluded_candidates": [item.model_dump() for item in overview.excluded],
             "insights": overview.insights,
+            "bond_card": bond_card,
         }
 
     async def answer(
@@ -97,6 +102,7 @@ class LLMAnswerer:
         question: str,
         overview: BondOverview,
         history: list[dict[str, str]] | None = None,
+        bond_card: dict[str, Any] | None = None,
     ) -> str | None:
         if not self.ready:
             return None
@@ -114,7 +120,7 @@ class LLMAnswerer:
                 "role": "user",
                 "content": (
                     f"Вопрос: {question}\n\n"
-                    f"Контекст портфеля (JSON): {self._context(overview)}"
+                    f"Контекст портфеля (JSON): {self._context(overview, bond_card)}"
                 ),
             },
         ]
