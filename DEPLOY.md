@@ -235,3 +235,10 @@ curl -X POST https://platoninvest.pro/api/fundamentals \
 ```
 
 Если данных нет, агент обязан написать «нет данных», а не выдумывать показатели.
+
+CSV-импорт:
+
+- шаблон: `GET /api/fundamentals/template`;
+- импорт: `POST /api/fundamentals/import` (multipart, поле `file`, заголовок `X-Admin-Token`);
+- поддержка UTF-8 и CP1251, разделитель `,` или `;`;
+- лимит 2 МБ и 2000 строк.
