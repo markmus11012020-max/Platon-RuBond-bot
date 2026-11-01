@@ -209,6 +209,25 @@ async def answer(question: str, history: list[dict[str, str]] | None = None) -> 
                 suggestions=["Покажи портфель", "Где риск?", "Предложи замену"],
             )
 
+    if any(word in text for word in ("брифинг", "утр", "план на день", "premarket")):
+        events = "\n".join(
+            f"• {item.date}: {item.title} — через {item.days} дн."
+            for item in overview.events[:4]
+        )
+        return ChatResponse(
+            message=(
+                "Утренний брифинг по портфелю:\n"
+                f"• Стоимость: {summary.total_value_rub:,.0f} ₽, "
+                f"YTM {summary.weighted_ytm_pct:.2f}%, "
+                f"дюрация {summary.weighted_duration_years:.2f} года.\n"
+                f"• Купонный поток: {summary.annual_coupon_rub:,.0f} ₽ в год.\n"
+                f"• Ближайшие события:\n{events}\n\n"
+                "Фокус: доля ТГК-14 выше лимита, есть кандидаты на замену. "
+                "Сделки — только после подтверждения."
+            ).replace(",", " "),
+            suggestions=["Предложи замену", "Где риск?", "Покажи портфель"],
+        )
+
     if any(word in text for word in ("риск", "стресс", "концентрац")):
         return ChatResponse(
             message=(

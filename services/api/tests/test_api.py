@@ -55,9 +55,23 @@ def test_unknown_action_returns_404() -> None:
     assert response.status_code == 404
 
 
+def test_premarket_briefing() -> None:
+    response = client.post(
+        "/api/bots/bond/chat",
+        json={"message": "Утренний брифинг", "history": []},
+    )
+    assert response.status_code == 200
+    assert "брифинг" in response.json()["message"].lower()
+
+
 def test_freelance_feed() -> None:
     response = client.get("/api/bots/freelance/orders")
     assert response.status_code == 200
     payload = response.json()
     assert payload["summary"]["source"] == "demo"
     assert len(payload["orders"]) >= 3
+
+
+def test_mcp_tools_unavailable_without_token() -> None:
+    response = client.get("/api/mcp/tools")
+    assert response.status_code == 503

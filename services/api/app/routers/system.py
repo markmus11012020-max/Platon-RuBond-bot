@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from app.config import Settings, get_settings
 from app.schemas import BotManifest, HealthResponse
 from app.services.mcp_client import TInvestMCPClient
+from app.services.mcp_tools import split_tools
 
 router = APIRouter()
 
@@ -65,7 +66,11 @@ async def mcp_tools() -> dict:
         tools = await client.list_tools()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"mode": settings.tinvest_mcp_mode, "tools": tools}
+    return {
+        "mode": settings.tinvest_mcp_mode,
+        "tools": tools,
+        "categories": split_tools(tools),
+    }
 
 
 __all__ = ["BOTS", "router"]

@@ -63,6 +63,7 @@ export function PlatonApp() {
     "Покажи портфель",
     "Где риск?",
     "Предложи замену",
+    "Утренний брифинг",
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -436,6 +437,7 @@ export function PlatonApp() {
                   "Где риск?",
                   "Предложи замену",
                   "Что с купонами?",
+                  "Утренний брифинг",
                 ].map((prompt) => (
                   <button
                     key={prompt}
