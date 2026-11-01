@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from app.config import get_settings
 from app.demo import (
     DEMO_AS_OF,
     DEMO_CANDIDATES,
@@ -23,6 +24,7 @@ from app.schemas import (
     PortfolioSummary,
     PositionCard,
 )
+from app.services.llm_service import LLMAnswerer
 
 COLORS = ["#f6c453", "#7dd3fc", "#a7f3d0", "#c4b5fd", "#fda4af", "#93c5fd"]
 
@@ -173,7 +175,7 @@ def _swap_action() -> ActionCard:
     return action
 
 
-def answer(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
+async def answer(question: str, history: list[dict[str, str]] | None = None) -> ChatResponse:
     text = (question or "").strip().lower()
     overview = build_overview()
     summary = overview.summary
@@ -233,6 +235,13 @@ def answer(question: str, history: list[dict[str, str]] | None = None) -> ChatRe
             ),
             suggestions=["Подтвердить сделку", "Покажи риски", "Другой вариант"],
             action=action,
+        )
+
+    llm_text = await LLMAnswerer(get_settings()).answer(question, overview, history)
+    if llm_text:
+        return ChatResponse(
+            message=llm_text,
+            suggestions=["Покажи портфель", "Где риск?", "Предложи замену"],
         )
 
     if any(word in text for word in ("портфель", "состав", "стоимость", "сколько")):

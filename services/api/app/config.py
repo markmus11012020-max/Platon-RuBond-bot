@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.aitunnel.ru/v1"
     openai_model: str = "deepseek-v4.1-flash-1017"
+    llm_enabled: bool = False
+    llm_timeout: int = 45
+    llm_max_tokens: int = 1200
 
     vapid_public_key: str = ""
     vapid_private_key: str = ""

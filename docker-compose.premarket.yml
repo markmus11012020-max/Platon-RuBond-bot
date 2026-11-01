@@ -11,6 +11,10 @@ services:
       PREMARKET_BOND_DB_PATH: /data/bondbot.db
       PREMARKET_FREELANCE_DB_PATH: /freelance-data/bot.db
       PREMARKET_CORS_ORIGINS: https://platoninvest.pro
+      PREMARKET_LLM_ENABLED: ${PREMARKET_LLM_ENABLED:-0}
+      PREMARKET_OPENAI_API_KEY: ${BONDBOT_OPENAI_API_KEY:-}
+      PREMARKET_OPENAI_BASE_URL: ${BONDBOT_OPENAI_BASE_URL:-https://api.aitunnel.ru/v1}
+      PREMARKET_OPENAI_MODEL: ${BONDBOT_OPENAI_MODEL:-deepseek-v4.1-flash-1017}
       TZ: Europe/Moscow
     volumes:
       - ./bondbot-data:/data:ro

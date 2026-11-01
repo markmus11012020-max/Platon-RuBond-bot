@@ -16,7 +16,7 @@ async def overview() -> BondOverview:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     history = [item.model_dump() for item in request.history]
-    return answer(request.message, history)
+    return await answer(request.message, history)
 
 
 @router.post("/actions/{action_id}/confirm", response_model=ConfirmResponse)
