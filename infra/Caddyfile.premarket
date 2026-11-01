@@ -9,3 +9,7 @@ platoninvest.pro {
         reverse_proxy 127.0.0.1:3000
     }
 }
+
+www.platoninvest.pro {
+    redir https://platoninvest.pro{uri} permanent
+}

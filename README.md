@@ -217,6 +217,42 @@ T-Invest
 Production-развёртывание выполняется отдельным compose-проектом platon-bond-bot. Health-check доступен на 127.0.0.1:8081. Существующий freelance-бот на порту 8080 и Caddy не затрагиваются.
 
 
+PREMARKET PWA
+
+Новый слой для конкурса «Инвест. Премаркет»: мобильное PWA на Next.js и FastAPI gateway с MCP-клиентом.
+
+Структура:
+
+- apps/web — Next.js PWA: портфель, чат с агентом, сделки, второй бот Freelance Radar;
+- services/api — FastAPI: API gateway, mock/sandbox данные, read-only адаптеры;
+- modules/bond — логика Bond Copilot;
+- modules/freelance — read-only лента заказов;
+- infra — Caddy и схема деплоя.
+
+Запуск:
+
+```bash
+docker compose -p platon-premarket -f docker-compose.premarket.yml up -d --build
+```
+
+Локально:
+
+```bash
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir services/api --port 8000
+cd apps/web
+npm install
+npm run dev
+```
+
+PWA: https://platoninvest.pro
+
+API: https://platoninvest.pro/api
+
+Документация API: https://platoninvest.pro/api/docs
+
+T-Invest MCP подключается через PREMARKET_TINVEST_MCP_* в .env. Токен хранится только на backend. Сделки выполняются в sandbox и только после подтверждения. В демо-режиме используются данные портфеля и mock-сценарии, чтобы интерфейс работал без токена.
+
+
 БЫСТРЫЙ СТАРТ
 
 1. Клонирование и настройка

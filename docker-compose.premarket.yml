@@ -9,12 +9,12 @@ services:
       PREMARKET_ENVIRONMENT: production
       PREMARKET_DEMO_MODE: "1"
       PREMARKET_BOND_DB_PATH: /data/bondbot.db
-      PREMARKET_FREELANCE_DB_PATH: /data/freelance/bot.db
+      PREMARKET_FREELANCE_DB_PATH: /freelance-data/bot.db
       PREMARKET_CORS_ORIGINS: https://platoninvest.pro
       TZ: Europe/Moscow
     volumes:
       - ./bondbot-data:/data:ro
-      - /opt/freelance-bot/data:/data/freelance:ro
+      - /opt/freelance-bot/data:/freelance-data:ro
     ports:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
