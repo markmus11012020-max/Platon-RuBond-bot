@@ -7,6 +7,7 @@ import type {
   ConfirmResponse,
   CreditEventEntry,
   FreelanceResponse,
+  FundamentalsEntry,
   HealthResponse,
   Bot,
 } from "./types";
@@ -60,6 +61,35 @@ export const api = {
     request<FreelanceResponse>("/api/bots/freelance/orders"),
   riskBlocklist: () => request<BlocklistEntry[]>("/api/risk/blocklist"),
   riskEvents: () => request<CreditEventEntry[]>("/api/risk/events"),
+  riskFundamentals: (isin?: string, issuer?: string) => {
+    const params = new URLSearchParams();
+    if (isin) params.set("isin", isin);
+    if (issuer) params.set("issuer", issuer);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<FundamentalsEntry[]>(`/api/fundamentals${suffix}`);
+  },
+  addRiskFundamentals: (
+    token: string,
+    payload: {
+      isin?: string;
+      issuer?: string;
+      period: string;
+      revenue_rub?: number | null;
+      net_profit_rub?: number | null;
+      ebitda_rub?: number | null;
+      net_debt_rub?: number | null;
+      equity_rub?: number | null;
+      current_ratio?: number | null;
+      source: string;
+      source_url?: string;
+      notes?: string;
+    },
+  ) =>
+    request<FundamentalsEntry>("/api/fundamentals", {
+      method: "POST",
+      headers: { "X-Admin-Token": token },
+      body: JSON.stringify(payload),
+    }),
   addRiskBlocklist: (
     token: string,
     payload: {

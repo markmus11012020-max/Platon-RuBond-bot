@@ -187,3 +187,19 @@ export type CreditEventEntry = {
   summary: string;
   created_at?: string;
 };
+
+export type FundamentalsEntry = {
+  isin: string;
+  issuer: string;
+  period: string;
+  revenue_rub: number | null;
+  net_profit_rub: number | null;
+  ebitda_rub: number | null;
+  net_debt_rub: number | null;
+  equity_rub: number | null;
+  current_ratio: number | null;
+  source: string;
+  source_url: string;
+  notes: string;
+  updated_at?: string | null;
+};

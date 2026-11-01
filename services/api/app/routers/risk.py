@@ -3,7 +3,8 @@ from __future__ import annotations
 import secrets
 from datetime import date
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import APIKeyHeader
 
 from app.config import get_settings
 from app.risk.repository import RiskRepository
@@ -19,6 +20,8 @@ from app.services.risk_service import evaluate_candidates
 
 router = APIRouter()
 
+admin_header = APIKeyHeader(name="X-Admin-Token", auto_error=False)
+
 
 def repository() -> RiskRepository:
     settings = get_settings()
@@ -28,11 +31,11 @@ def repository() -> RiskRepository:
     return repo
 
 
-def require_admin(x_admin_token: str = Header(default="")) -> None:
+def require_admin(token: str | None = Depends(admin_header)) -> None:
     settings = get_settings()
     if not settings.admin_token:
         raise HTTPException(status_code=503, detail="PREMARKET_ADMIN_TOKEN не задан")
-    if not secrets.compare_digest(x_admin_token, settings.admin_token):
+    if not token or not secrets.compare_digest(token, settings.admin_token):
         raise HTTPException(status_code=401, detail="Неверный admin token")
 
 
