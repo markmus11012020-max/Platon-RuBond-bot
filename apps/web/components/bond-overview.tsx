@@ -26,6 +26,8 @@ export function BondOverviewView({
 }) {
   const { summary } = data;
   const positive = summary.profit_rub >= 0;
+  const excluded = data.excluded ?? [];
+  const candidates = data.candidates ?? [];
 
   return (
     <>
@@ -311,7 +313,7 @@ export function BondOverviewView({
         </div>
 
         <div className="candidate-list" style={{ marginTop: 8 }}>
-          {data.excluded.map((item) => (
+          {excluded.map((item) => (
             <div className="candidate" key={item.isin}>
               <div className="candidate-top">
                 <div>
@@ -329,9 +331,9 @@ export function BondOverviewView({
           ))}
         </div>
 
-        {data.candidates.length ? (
+        {candidates.length ? (
           <div className="candidate-list" style={{ marginTop: 8 }}>
-            {data.candidates.map((candidate) => (
+            {candidates.map((candidate) => (
               <div className="candidate" key={candidate.isin}>
                 <div className="candidate-top">
                   <div>

@@ -203,14 +203,19 @@ export function PlatonApp() {
     try {
       const result: ConfirmResponse = await api.confirmAction(action.id);
       setAction({ ...action, status: "confirmed" });
+      const review = action.kind === "review";
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: `Сделка подтверждена в sandbox.\nAudit ID: ${result.audit_id}\n${result.message}`,
+          content: `${
+            review ? "Риск-проверка зафиксирована." : "Сделка подтверждена в sandbox."
+          }\nAudit ID: ${result.audit_id}\n${result.message}`,
         },
       ]);
-      setToast(`Подтверждено · ${result.audit_id}`);
+      setToast(
+        `${review ? "Проверка зафиксирована" : "Подтверждено"} · ${result.audit_id}`,
+      );
     } catch (exc) {
       setToast(
         exc instanceof Error ? exc.message : "Не удалось подтвердить сделку",
