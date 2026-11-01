@@ -128,9 +128,12 @@ class LLMAnswerer:
                 model=self.settings.openai_model,
                 messages=messages,
                 temperature=0.2,
-                max_tokens=min(self.settings.llm_max_tokens, 900),
+                max_tokens=self.settings.llm_max_tokens,
             )
-            text = (response.choices[0].message.content or "").strip()
+            choice = response.choices[0]
+            if getattr(choice, "finish_reason", None) == "length":
+                log.warning("LLM answer reached max_tokens=%s", self.settings.llm_max_tokens)
+            text = (choice.message.content or "").strip()
             return to_plain_text(text) if text else None
         except Exception as exc:
             log.warning("LLM answer failed: %s", exc)

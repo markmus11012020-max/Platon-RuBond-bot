@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     openai_model: str = "deepseek-v4.1-flash-1017"
     llm_enabled: bool = False
     llm_timeout: int = 45
-    llm_max_tokens: int = 1200
+    llm_max_tokens: int = 1600
 
     vapid_public_key: str = ""
     vapid_private_key: str = ""
