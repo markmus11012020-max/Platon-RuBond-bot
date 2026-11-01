@@ -85,3 +85,5 @@ node_modules/
 apps/web/*.png
 /premarket-data/
 /services/api/data/
+*.db-shm
+*.db-wal
