@@ -42,6 +42,41 @@ const INITIAL_MESSAGE: ChatMessage = {
     "Я Bond Copilot. Могу разобрать портфель, риски, купоны и оферты, подобрать замену и подготовить сделку в sandbox.",
 };
 
+const DEFAULT_SUGGESTIONS = [
+  "Покажи портфель",
+  "Где риск?",
+  "Предложи замену",
+  "Утренний брифинг",
+];
+
+const CHAT_STORAGE_KEY = "platon.chat.v1";
+const CHAT_TTL_MS = 120 * 60 * 1000;
+
+type StoredChat = {
+  savedAt: number;
+  messages: ChatMessage[];
+  suggestions: string[];
+  action: ActionCard | null;
+};
+
+function loadChat(): StoredChat | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredChat;
+    if (!parsed.savedAt || Date.now() - parsed.savedAt > CHAT_TTL_MS) {
+      window.localStorage.removeItem(CHAT_STORAGE_KEY);
+      return null;
+    }
+    if (!Array.isArray(parsed.messages) || !parsed.messages.length) return null;
+    return parsed;
+  } catch {
+    window.localStorage.removeItem(CHAT_STORAGE_KEY);
+    return null;
+  }
+}
+
 export function PlatonApp() {
   const [bots, setBots] = useState<BotType[]>([]);
   const [activeBot, setActiveBot] = useState("bond");
@@ -59,16 +94,35 @@ export function PlatonApp() {
   const [installDismissed, setInstallDismissed] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
-  const [suggestions, setSuggestions] = useState<string[]>([
-    "Покажи портфель",
-    "Где риск?",
-    "Предложи замену",
-    "Утренний брифинг",
-  ]);
+  const [suggestions, setSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [action, setAction] = useState<ActionCard | null>(null);
   const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    const restored = loadChat();
+    if (!restored) return;
+    setMessages(restored.messages);
+    setSuggestions(restored.suggestions.length ? restored.suggestions : DEFAULT_SUGGESTIONS);
+    setAction(restored.action);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CHAT_STORAGE_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          messages,
+          suggestions,
+          action,
+        } satisfies StoredChat),
+      );
+    } catch {
+      // Storage can be unavailable in private mode; chat still works in memory.
+    }
+  }, [messages, suggestions, action]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -196,6 +250,18 @@ export function PlatonApp() {
     },
     [sendMessage],
   );
+
+  const resetChat = useCallback(() => {
+    setMessages([INITIAL_MESSAGE]);
+    setSuggestions(DEFAULT_SUGGESTIONS);
+    setAction(null);
+    setChatInput("");
+    try {
+      window.localStorage.removeItem(CHAT_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   const confirmAction = useCallback(async () => {
     if (!action || confirming) return;
@@ -405,6 +471,7 @@ export function PlatonApp() {
                 onSend={() => void sendMessage(chatInput)}
                 onSuggestion={(value) => void sendMessage(value)}
                 onConfirm={() => void confirmAction()}
+                onReset={resetChat}
               />
             ) : null}
 

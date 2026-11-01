@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUp, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { ActionCardView } from "@/components/action-card";
@@ -17,6 +17,7 @@ export function ChatPanel({
   onSend,
   onSuggestion,
   onConfirm,
+  onReset,
 }: {
   messages: ChatMessage[];
   suggestions: string[];
@@ -28,6 +29,7 @@ export function ChatPanel({
   onSend: () => void;
   onSuggestion: (value: string) => void;
   onConfirm: () => void;
+  onReset: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -47,9 +49,21 @@ export function ChatPanel({
             Агент
           </h1>
         </div>
-        <div className="chip mint">
-          <ShieldCheck size={12} />
-          HITL
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div className="chip mint">
+            <ShieldCheck size={12} />
+            HITL
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onReset}
+            aria-label="Новый диалог"
+            title="Новый диалог"
+            style={{ width: 34, height: 34 }}
+          >
+            <RotateCcw size={14} />
+          </button>
         </div>
       </div>
 
